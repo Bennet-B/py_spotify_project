@@ -12,7 +12,7 @@ Phase 2 (later, maybe): A small web UI to do the same analyses interactively, pl
 
 | Criterion | Pts | How we satisfy it |
 | --- | --- | --- |
-| OOP design — 2–3 classes with meaningful inheritance | 4 | **Option A (chosen):** `SpotifyResource` (ABC) → `Track` / `Playlist` / `Artist`; plus `SpotifyClient` and `PlaylistAnalyzer` (composition) |
+| OOP design — 2–3 classes with meaningful inheritance | 4 | **Option B (chosen):** `Analyzer` (ABC) → 6 concrete subclasses with overridden `analyze()` + `plot()` methods (Strategy pattern). Plus `SpotifyClient`, `FileCache`, `PlaylistAnalyzer` orchestrator. Track/Playlist/Artist as plain `@dataclass(frozen=True, slots=True)`. Real polymorphism in `PlaylistAnalyzer.run_all()`. See [Phase 1 design spec](docs/superpowers/specs/2026-04-30-spotify-phase1-design.md). |
 | Internet data access (public API, programmatic) | 4 | Spotify Web API via `spotipy` |
 | Robustness & validation (try/except, retries, malformed data) | shares slot | spotipy session retries, graceful 403/429 handling, Pydantic at boundaries |
 | Pandas analysis + ≥ 1 visualization | 4 | DataFrame of tracks; matplotlib plots (year histogram, genre bar, etc.) |
@@ -26,9 +26,8 @@ Deliverables: Git repo with `src/`, `notebooks/`, `tests/`, README. Final presen
 - Python 3.11+ (per global style: type hints everywhere, `from __future__ import annotations`)
 - `.venv` per project (per global rule)
 - `spotipy` — Spotify Web API client, handles OAuth
-- `pandas` + `matplotlib` (and maybe `seaborn`) — analysis + plots
+- `pandas` + `matplotlib` + `seaborn` — analysis + plots
 - `python-dotenv` — load credentials from `.env`
-- `pydantic` — validate data at API boundary
 - `pytest` — tests
 - `jupyter` / `ipykernel` — for the notebook
 - (Phase 2) `streamlit` or `fastapi` + minimal HTML — TBD
@@ -37,7 +36,7 @@ Deliverables: Git repo with `src/`, `notebooks/`, `tests/`, README. Final presen
 
 The Spotify Web API was significantly cut down in late 2024 / early 2026. Read these before assuming any endpoint works:
 
-1. **Audio Features endpoint is deprecated for new apps (Nov 2024).** The classic `valence / energy / danceability / tempo / acousticness / key` features are **not available** to apps registered after 2024-11-27 — they return 403. Apps with extended-quota access from before that date may still work. **Action:** the analyzer tries audio features, catches 403, and just omits those columns. Don't design analyses that *require* them.
+1. **Audio Features endpoint is deprecated for new apps (Nov 2024).** The classic `valence / energy / danceability / tempo / acousticness / key` features are **not available** to apps registered after 2024-11-27 — they return 403. **Policy:** we do **not** implement deprecated endpoints in `src/`. No `get_audio_features()`, no try/catch fallback, no feature flag. The constraint is documented in README; the codebase contains only what we can run and test. (Driver: user feedback "no untestable / dead code", saved in memory.)
 2. **Audio Analysis, Recommendations, Related Artists, Featured / Category Playlists, Genre Seeds** — also deprecated for new apps. Don't use.
 3. **Track-level genre does not exist.** Genres live on the *artist* object. To get a track's genres we look up its primary artist and use those.
 4. **Pagination is required.** Most list endpoints cap at 50–100 items. Use spotipy's `sp.next(results)` loop.
@@ -66,13 +65,17 @@ py_spotify_project/
 ├── README.md
 ├── requirements.txt
 ├── pyproject.toml             # black + ruff + mypy config
+├── docs/
+│   └── superpowers/
+│       └── specs/
+│           └── 2026-04-30-spotify-phase1-design.md
 ├── src/
 │   └── spotify_project/
 │       ├── __init__.py
-│       ├── client.py          # SpotifyClient — auth + fetch
-│       ├── models.py          # SpotifyResource (ABC), Track, Playlist, Artist
-│       ├── analyzer.py        # PlaylistAnalyzer — pandas-based
-│       └── visualizer.py      # plots
+│       ├── cache.py           # FileCache — file-based API response cache (7-day TTL)
+│       ├── client.py          # SpotifyClient — auth, fetch, retry, pagination
+│       ├── models.py          # @dataclass Track, Playlist, Artist (no inheritance)
+│       └── analyzer.py        # Analyzer (ABC) + 6 subclasses + PlaylistAnalyzer orchestrator
 ├── notebooks/
 │   └── 01_explore_user_account.ipynb
 └── tests/
@@ -85,7 +88,7 @@ py_spotify_project/
 
 - Global Python style rules apply — see `~/.claude/rules/python-style.md`.
 - Strict type hints everywhere except notebooks (per global rule).
-- Validate at API boundary (Pydantic on raw JSON), use plain dataclasses internally.
+- Plain `@dataclass(slots=True, frozen=True)` for data carriers; validate invariants in `__post_init__` only where bugs can plausibly occur. Pydantic considered and rejected (data source is consistent and trusted, no untrusted input).
 - `with` for files. `pathlib.Path`, never string concat. Always `encoding="utf-8"`. Always `timeout=` on requests.
 - **Comment / docstring style** (user preference): write a docstring on every class and every non-trivial public method, in the style of C# XML doc comments — short summary, parameters, return value, exceptions raised. Use Google-style or Sphinx-style docstrings consistently. Inline `#` comments only where the *why* is non-obvious. Self-explanatory names + good docstrings beat noisy inline comments.
 
@@ -95,10 +98,11 @@ py_spotify_project/
 
 ## Reference materials in this repo
 
+- `docs/superpowers/specs/2026-04-30-spotify-phase1-design.md` — **authoritative Phase 1 design spec** (start here)
 - `INFPROG2 FS26 Semester Project Guide.txt` — official course brief (root)
 - `week_10_infodump/PROG2_SUMMARY.md` — condensed course summary; especially §5 (OOP), §7 (HTTP), §8 (validation), §9 (pandas), §15 (semester-project rubric)
-- `week_10_infodump/_extracted/` — full lecture notebooks and lab solutions
+- `week_10_infodump/_extracted/` — full lecture notebooks and lab solutions (gitignored)
 
 ## Current status
 
-- 2026-04-30: Project initialized. Reviewed course brief + summary. Verified Spotify API state (Audio Features deprecation confirmed). Planning Phase 1 notebook with user.
+- 2026-04-30: Project initialized; Phase 1 design completed via superpowers brainstorming. Pivoted from Option A (SpotifyResource hierarchy) to Option B (Analyzer hierarchy) — better-defended OOP, real polymorphism. Dropped pydantic; added FileCache. Spec at `docs/superpowers/specs/2026-04-30-spotify-phase1-design.md`. Implementation begins after user approval.

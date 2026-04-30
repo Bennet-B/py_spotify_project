@@ -22,6 +22,10 @@ Further endpoints were trimmed in early 2026.
 
 Because **this app is brand-new**, none of those work for us — the API returns `403 Forbidden`. Apps that had extended quota *before* Nov 2024 are grandfathered in, but we're not. The classic "valence × energy mood map" plot you'll see in older Spotify-analytics tutorials is **not** something we can build today.
 
+### What this means for the codebase
+
+We do not implement endpoints we cannot exercise. There is no `get_audio_features()` method, no `recommendations()` method, no `related_artists()` method anywhere in `src/spotify_project/`. We did not add try/catch wrappers, feature flags, or "if available" branches for these features either. **Untested code is technical debt the moment it lands**, so we keep the codebase clean and document the constraint here once. If Spotify ever restores access (or we get a grandfathered app), adding the code is a small follow-up; until then it would be code we cannot test, run, or defend.
+
 ### What we can still do (and it's plenty)
 
 The endpoints we *do* still have access to give us:
