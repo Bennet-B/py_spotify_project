@@ -1,0 +1,15 @@
+# Runtime
+spotipy>=2.25,<3
+pandas>=2.2,<3
+matplotlib>=3.9,<4
+seaborn>=0.13,<0.14
+python-dotenv>=1.0,<2
+pydantic>=2.7,<3
+jupyter>=1.0,<2
+ipykernel>=6.29,<7
+
+# Dev
+pytest>=8.0,<9
+black>=24.0
+ruff>=0.5
+mypy>=1.10

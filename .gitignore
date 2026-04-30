@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual env
+.venv/
+venv/
+
+# Secrets — never commit these
+.env
+.cache
+.cache-*
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Generated data
+data/
+
+# Reference material from week 10 — too big for git, keep only the summary.md
+week_10_infodump/*.zip
+week_10_infodump/_extracted/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
