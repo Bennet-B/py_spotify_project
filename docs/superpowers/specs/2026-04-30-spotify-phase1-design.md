@@ -91,11 +91,15 @@ class Artist:
 
 @dataclass(slots=True, frozen=True)
 class Track:
-    """A single track in a Spotify playlist."""
+    """A single track in a Spotify playlist.
+
+    Holds full `Artist` references (not just IDs) — domain-faithful object
+    graph, traversable as `track.primary_artist.genres`. Local files have
+    `artists = ()` because Spotify gives us no artist API data for them.
+    """
     id: str | None                   # None for local files
     name: str
-    primary_artist_id: str | None    # None for local files
-    all_artist_names: tuple[str, ...]
+    artists: tuple[Artist, ...]      # Full Artist refs with genres. () for local files.
     album_name: str
     release_date: str | None         # ISO date string; may be year-only
     duration_ms: int
@@ -104,8 +108,26 @@ class Track:
     added_at: datetime | None        # None for Spotify-curated playlists
     is_local: bool
 
+    def __post_init__(self) -> None:
+        if not 0 <= self.popularity <= 100:
+            raise ValueError(f"popularity {self.popularity} outside [0,100]")
+
+    @property
+    def primary_artist(self) -> Artist | None:
+        """The first artist on the track, or None for local files."""
+        return self.artists[0] if self.artists else None
+
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> "Track": ...
+    def from_api(
+        cls,
+        item: dict[str, Any],
+        artist_by_id: dict[str, Artist],
+    ) -> "Track":
+        """Parse a playlist-item dict, looking up full Artists by ID.
+
+        `artist_by_id` is supplied by SpotifyClient.playlist after batch-
+        fetching all unique artist IDs in a single phase.
+        """
 
 
 @dataclass(slots=True, frozen=True)
@@ -189,7 +211,14 @@ class SpotifyClient:
         *,
         force_refresh: bool = False,
     ) -> Playlist:
-        """Fetch a playlist by ID, including all tracks (paginated)."""
+        """Fetch a playlist by ID, fully enriched.
+
+        Two-phase: (1) fetch playlist metadata + paginated track items
+        (artist IDs only); (2) collect unique artist IDs across all tracks
+        and batch-fetch them. Each Track is constructed with full `Artist`
+        objects embedded (not just IDs), so callers can write
+        `track.primary_artist.genres` directly.
+        """
 
     def artists(
         self,
@@ -199,7 +228,8 @@ class SpotifyClient:
     ) -> list[Artist]:
         """Fetch a batch of artists; respects Spotify's 50-IDs-per-call cap.
 
-        Used to enrich tracks with genres (which live on the artist).
+        Used internally by `playlist` to enrich track artists with genres,
+        and exposed publicly for callers who want artist data on its own.
         """
 ```
 
@@ -273,13 +303,13 @@ class PlaylistAnalyzer:
     def from_playlist(
         cls,
         playlist: Playlist,
-        artists: list[Artist],
         analyzers: list[Analyzer] | None = None,
     ) -> "PlaylistAnalyzer":
-        """Build the track DataFrame from a Playlist + its enriching artists.
+        """Build the track DataFrame from a Playlist (artists already embedded).
 
-        Joins each track to its primary artist's genres. If `analyzers` is None,
-        registers the default set (all six concrete subclasses above).
+        Flattens `track.primary_artist.genres` into the DataFrame's `genres`
+        column, etc. If `analyzers` is None, registers the default set (all
+        six concrete subclasses above).
         """
 
     def run_all(self) -> dict[str, pd.DataFrame]: ...
