@@ -171,7 +171,7 @@ class FileCache:
         """Remove all cached entries."""
 ```
 
-Cache keys use a stable form like `playlist/<id>` or `artists/<comma-joined-ids>`. TTL is checked via file mtime. Special characters in keys are sanitized to filesystem-safe filenames.
+Cache keys use a stable form like `playlist/<id>` or `artists/<comma-joined-ids>`. TTL is checked via file mtime. Keys containing `..` segments or that resolve outside the cache root are rejected with `ValueError` — callers are responsible for constructing safe keys, but the cache enforces the contract defensively.
 
 ### 3.3 `client.py`
 

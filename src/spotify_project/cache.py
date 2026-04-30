@@ -57,4 +57,21 @@ class FileCache:
             f.unlink()
 
     def _path_for(self, key: str) -> Path:
-        return self.root / f"{key}.json"
+        """Resolve ``key`` to its on-disk path, rejecting traversal attempts.
+
+        Args:
+            key: Cache key fragment (e.g. ``"playlist/<id>"``).
+
+        Returns:
+            The full filesystem path under ``self.root``.
+
+        Raises:
+            ValueError: If ``key`` contains ``..`` segments or otherwise
+                resolves outside the cache root.
+        """
+        if ".." in key.split("/"):
+            raise ValueError(f"Unsafe cache key: {key!r}")
+        path = self.root / f"{key}.json"
+        if not path.resolve().is_relative_to(self.root.resolve()):
+            raise ValueError(f"Cache key escapes root: {key!r}")
+        return path

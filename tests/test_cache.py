@@ -4,6 +4,8 @@ import os
 import time
 from pathlib import Path
 
+import pytest
+
 from spotify_project.cache import FileCache
 
 
@@ -22,3 +24,10 @@ def test_get_after_ttl_returns_none(tmp_path: Path) -> None:
     two_days_ago = time.time() - 2 * 86_400
     os.utime(cache_file, (two_days_ago, two_days_ago))
     assert cache.get("playlist/abc") is None
+
+
+def test_unsafe_key_with_traversal_raises(tmp_path: Path) -> None:
+    """A key containing `..` segments is rejected as a traversal attempt."""
+    cache = FileCache(root=tmp_path)
+    with pytest.raises(ValueError, match="Unsafe cache key"):
+        cache.put("../escape", {"x": 1})
