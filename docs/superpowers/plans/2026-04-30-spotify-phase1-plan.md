@@ -137,7 +137,7 @@ A small detour from the spec: `SpotifyClient` takes the underlying `spotipy.Spot
   import json
   import time
   from pathlib import Path
-  from typing import Any
+  from typing import Any, cast
 
 
   class FileCache:
@@ -172,7 +172,7 @@ A small detour from the spec: `SpotifyClient` takes the underlying `spotipy.Spot
           age_seconds = time.time() - path.stat().st_mtime
           if age_seconds > self.ttl_days * 86_400:
               return None
-          return json.loads(path.read_text(encoding="utf-8"))
+          return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
       def put(self, key: str, value: dict[str, Any]) -> None:
           """Write ``value`` to disk under ``key``.
