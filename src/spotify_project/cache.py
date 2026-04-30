@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+from typing import Any, cast
+
+
+class FileCache:
+    """File-based cache for Spotify API responses.
+
+    Stores each value as a single JSON file under ``root/<key>.json``.
+    A cached entry is fresh iff the file's mtime is within ``ttl_days``.
+    Slashes in keys create subdirectories; keep keys filesystem-safe.
+
+    Attributes:
+        root: Directory where cache files are stored.
+        ttl_days: How long a cached value stays valid, in days.
+    """
+
+    def __init__(self, root: Path, ttl_days: float = 7.0) -> None:
+        self.root = root
+        self.ttl_days = ttl_days
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def get(self, key: str) -> dict[str, Any] | None:
+        """Return the cached JSON for ``key`` if present and within TTL.
+
+        Args:
+            key: Cache key (e.g. ``"playlist/<id>"``).
+
+        Returns:
+            The deserialized JSON, or ``None`` if missing / stale.
+        """
+        path = self._path_for(key)
+        if not path.exists():
+            return None
+        age_seconds = time.time() - path.stat().st_mtime
+        if age_seconds > self.ttl_days * 86_400:
+            return None
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+
+    def put(self, key: str, value: dict[str, Any]) -> None:
+        """Write ``value`` to disk under ``key``.
+
+        Args:
+            key: Cache key (filesystem-safe path fragment).
+            value: JSON-serializable mapping to store.
+        """
+        path = self._path_for(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(value), encoding="utf-8")
+
+    def clear(self) -> None:
+        """Remove every cached entry under ``root``."""
+        for f in self.root.rglob("*.json"):
+            f.unlink()
+
+    def _path_for(self, key: str) -> Path:
+        return self.root / f"{key}.json"
