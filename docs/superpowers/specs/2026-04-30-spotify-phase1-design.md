@@ -111,6 +111,8 @@ class Track:
     def __post_init__(self) -> None:
         if not 0 <= self.popularity <= 100:
             raise ValueError(f"popularity {self.popularity} outside [0,100]")
+        if self.duration_ms < 0:
+            raise ValueError(f"duration_ms must be >= 0, got {self.duration_ms}")
 
     @property
     def primary_artist(self) -> Artist | None:
