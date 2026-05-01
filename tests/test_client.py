@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
+
+import pytest
 
 from spotify_project.cache import FileCache
 from spotify_project.client import SpotifyClient
 
 
-def _track_item(idx: int, artist_id: str = "a1") -> dict:
+def _track_item(idx: int, artist_id: str = "a1") -> dict[str, Any]:
     """Build a spotipy-shaped playlist-item dict for one fake track."""
     return {
         "track": {
@@ -64,3 +67,15 @@ def test_playlist_paginates_and_enriches_artists(tmp_path: Path) -> None:
     assert first is not None
     assert first.name == "Artist 1"
     assert "rock" in first.genres
+
+
+def test_from_env_raises_on_missing_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """from_env raises RuntimeError listing the missing SPOTIPY_* env vars."""
+    for var in ("SPOTIPY_CLIENT_ID", "SPOTIPY_CLIENT_SECRET", "SPOTIPY_REDIRECT_URI"):
+        monkeypatch.delenv(var, raising=False)
+    cache = FileCache(root=tmp_path)
+    with pytest.raises(RuntimeError, match="SPOTIPY_CLIENT_ID"):
+        SpotifyClient.from_env(cache=cache)

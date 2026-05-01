@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterable
 from typing import Any, ClassVar, cast
 
@@ -27,11 +28,18 @@ class SpotifyClient:
 
     DEFAULT_SCOPES: ClassVar[list[str]] = [
         "user-read-private",
+        "user-read-email",
         "playlist-read-private",
         "playlist-read-collaborative",
         "user-library-read",
         "user-top-read",
     ]
+
+    REQUIRED_ENV_VARS: ClassVar[tuple[str, ...]] = (
+        "SPOTIPY_CLIENT_ID",
+        "SPOTIPY_CLIENT_SECRET",
+        "SPOTIPY_REDIRECT_URI",
+    )
 
     def __init__(self, sp: spotipy.Spotify, cache: FileCache) -> None:
         self.sp = sp
@@ -45,6 +53,11 @@ class SpotifyClient:
     ) -> SpotifyClient:
         """Build an OAuth-authenticated client from SPOTIPY_* env vars.
 
+        Reads required credentials from the process environment (loaded
+        from ``.env`` via python-dotenv at notebook startup, or set as OS
+        env vars). Fails loud at construction time if any are missing,
+        rather than letting spotipy surface a cryptic HTTP 400 later.
+
         Args:
             cache: FileCache for API response persistence.
             scopes: OAuth scopes; defaults to ``DEFAULT_SCOPES`` (read-only).
@@ -52,9 +65,25 @@ class SpotifyClient:
         Returns:
             An authenticated SpotifyClient. Triggers a browser-based OAuth
             flow on first run; subsequent runs use spotipy's local token cache.
+
+        Raises:
+            RuntimeError: If any of the required ``SPOTIPY_*`` env vars are
+                unset or empty.
         """
+        missing = [k for k in cls.REQUIRED_ENV_VARS if not os.environ.get(k)]
+        if missing:
+            raise RuntimeError(
+                f"Missing required env var(s): {', '.join(missing)}. "
+                "Copy .env.example to .env and fill them in, "
+                "or set them with `setx` (Windows) / `export` (Unix)."
+            )
         scope_str = " ".join(scopes or cls.DEFAULT_SCOPES)
-        oauth = SpotifyOAuth(scope=scope_str)
+        oauth = SpotifyOAuth(
+            client_id=os.environ["SPOTIPY_CLIENT_ID"],
+            client_secret=os.environ["SPOTIPY_CLIENT_SECRET"],
+            redirect_uri=os.environ["SPOTIPY_REDIRECT_URI"],
+            scope=scope_str,
+        )
         sp = spotipy.Spotify(auth_manager=oauth)
         return cls(sp=sp, cache=cache)
 
@@ -101,6 +130,7 @@ class SpotifyClient:
                 page = self.sp.next(page)
                 track_items.extend(page["items"])
             data["tracks"]["items"] = track_items
+            data["tracks"].pop("next", None)
             self.cache.put(cache_key, data)
         else:
             data = cached
