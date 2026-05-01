@@ -36,7 +36,7 @@ def test_track_from_api_warns_on_unknown_artist_id(
 ) -> None:
     """Track.from_api logs a warning when an artist ID is missing from the lookup."""
     item: dict[str, Any] = {
-        "track": {
+        "item": {
             "id": "t1",
             "name": "Test Track",
             "type": "track",

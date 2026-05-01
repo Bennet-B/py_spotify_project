@@ -111,11 +111,16 @@ class Track:
                 by ``SpotifyClient.playlist`` after the batch artist call.
 
         Returns:
-            The constructed Track. Tracks whose ``track.type`` is not
+            The constructed Track. Tracks whose ``item.type`` is not
             ``"track"`` (e.g. podcast episodes) should be filtered out by
             the caller before this is called.
+
+        Note:
+            As of the Spotify Feb 2026 migration, the inner key is
+            ``"item"``, not the legacy ``"track"``. See the migration
+            guide referenced in CLAUDE.md.
         """
-        track_data = item["track"]
+        track_data = item["item"]
         is_local = item.get("is_local", False)
         resolved: list[Artist] = []
         for a in track_data.get("artists", []):

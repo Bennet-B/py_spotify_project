@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any, ClassVar, cast
 
 import spotipy
@@ -41,6 +42,8 @@ class SpotifyClient:
         "SPOTIPY_REDIRECT_URI",
     )
 
+    DEFAULT_TOKEN_CACHE: ClassVar[str] = ".cache/spotify_token"
+
     def __init__(self, sp: spotipy.Spotify, cache: FileCache) -> None:
         self.sp = sp
         self.cache = cache
@@ -78,11 +81,14 @@ class SpotifyClient:
                 "or set them with `setx` (Windows) / `export` (Unix)."
             )
         scope_str = " ".join(scopes or cls.DEFAULT_SCOPES)
+        token_cache_path = Path(cls.DEFAULT_TOKEN_CACHE)
+        token_cache_path.parent.mkdir(parents=True, exist_ok=True)
         oauth = SpotifyOAuth(
             client_id=os.environ["SPOTIPY_CLIENT_ID"],
             client_secret=os.environ["SPOTIPY_CLIENT_SECRET"],
             redirect_uri=os.environ["SPOTIPY_REDIRECT_URI"],
             scope=scope_str,
+            cache_path=str(token_cache_path),
         )
         sp = spotipy.Spotify(auth_manager=oauth)
         return cls(sp=sp, cache=cache)
@@ -92,12 +98,16 @@ class SpotifyClient:
         return cast(dict[str, Any], self.sp.current_user())
 
     def user_playlists(self) -> list[dict[str, Any]]:
-        """List the authenticated user's playlists (id, name, track count)."""
+        """List the authenticated user's playlists (id, name, track count).
+
+        Filters out ``None`` entries — Spotify occasionally returns null
+        slots in the array for deleted or otherwise inaccessible playlists.
+        """
         results = self.sp.current_user_playlists()
-        items: list[dict[str, Any]] = list(results["items"])
+        items: list[dict[str, Any]] = [p for p in results["items"] if p is not None]
         while results.get("next"):
             results = self.sp.next(results)
-            items.extend(results["items"])
+            items.extend(p for p in results["items"] if p is not None)
         return items
 
     def playlist(
@@ -124,27 +134,34 @@ class SpotifyClient:
         cached = None if force_refresh else self.cache.get(cache_key)
         if cached is None:
             data = self.sp.playlist(playlist_id)
-            track_items: list[dict[str, Any]] = list(data["tracks"]["items"])
-            page = data["tracks"]
+            if not data.get("items"):
+                raise ValueError(
+                    f"Playlist {playlist_id} returned no track details. "
+                    "Spotify's Feb 2026 API only includes tracks for "
+                    "playlists you own or collaborate on. Pick a playlist "
+                    "where the 'owner' column shows your display name."
+                )
+            track_items: list[dict[str, Any]] = list(data["items"]["items"])
+            page = data["items"]
             while page.get("next"):
                 page = self.sp.next(page)
                 track_items.extend(page["items"])
-            data["tracks"]["items"] = track_items
-            data["tracks"].pop("next", None)
+            data["items"]["items"] = track_items
+            data["items"].pop("next", None)
             self.cache.put(cache_key, data)
         else:
             data = cached
-            track_items = data["tracks"]["items"]
+            track_items = data["items"]["items"]
 
         track_items = [
             it
             for it in track_items
-            if it.get("track") and it["track"].get("type") == "track"
+            if it.get("item") and it["item"].get("type") == "track"
         ]
 
         artist_ids: set[str] = set()
         for item in track_items:
-            for a in item["track"].get("artists", []):
+            for a in item["item"].get("artists", []):
                 if a.get("id"):
                     artist_ids.add(a["id"])
 
@@ -161,29 +178,33 @@ class SpotifyClient:
         *,
         force_refresh: bool = False,
     ) -> list[Artist]:
-        """Fetch a batch of artists; respects Spotify's 50-IDs-per-call cap.
+        """Fetch artists by ID, one call per artist.
+
+        Spotify removed the batch ``GET /artists?ids=...`` endpoint in
+        February 2026 (403 Forbidden for new apps). The only path now is
+        single-artist ``GET /artists/{id}``. Each result is cached
+        individually under ``artist/<id>``, so a refresh of the same
+        playlist hits the cache instead of the API.
 
         Args:
             artist_ids: Iterable of Spotify artist IDs.
             force_refresh: Skip the cache and refetch from the API.
 
         Returns:
-            List of Artist objects with full genre data, in arbitrary order.
+            List of Artist objects with full genre data, sorted by id
+            (the deduplication order — not the input order).
         """
         ids = sorted(set(artist_ids))
         if not ids:
             return []
         out: list[Artist] = []
-        for i in range(0, len(ids), 50):
-            batch = ids[i : i + 50]
-            cache_key = f"artists/{','.join(batch)}"
+        for artist_id in ids:
+            cache_key = f"artist/{artist_id}"
             cached = None if force_refresh else self.cache.get(cache_key)
             if cached is None:
-                data = self.sp.artists(batch)
+                data = self.sp.artist(artist_id)
                 self.cache.put(cache_key, data)
             else:
                 data = cached
-            for a in data.get("artists", []):
-                if a is not None:
-                    out.append(Artist.from_api(a))
+            out.append(Artist.from_api(data))
         return out

@@ -173,7 +173,7 @@ class FileCache:
         """Remove all cached entries."""
 ```
 
-Cache keys use a stable form like `playlist/<id>` or `artists/<comma-joined-ids>`. TTL is checked via file mtime. Keys containing `..` segments or that resolve outside the cache root are rejected with `ValueError` — callers are responsible for constructing safe keys, but the cache enforces the contract defensively.
+Cache keys use a stable form like `playlist/<id>` or `artist/<id>` (singular — Spotify removed the batch artist endpoint in Feb 2026, so we cache one entry per artist). TTL is checked via file mtime. Keys containing `..` segments or that resolve outside the cache root are rejected with `ValueError` — callers are responsible for constructing safe keys, but the cache enforces the contract defensively.
 
 ### 3.3 `client.py`
 
@@ -228,7 +228,10 @@ class SpotifyClient:
         *,
         force_refresh: bool = False,
     ) -> list[Artist]:
-        """Fetch a batch of artists; respects Spotify's 50-IDs-per-call cap.
+        """Fetch artists one at a time (Spotify removed the batch endpoint
+        in Feb 2026 — single-artist GET /artists/{id} is the only option
+        for new apps). Each artist is cached individually so re-fetches
+        of the same playlist hit the cache.
 
         Used internally by `playlist` to enrich track artists with genres,
         and exposed publicly for callers who want artist data on its own.

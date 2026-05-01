@@ -11,9 +11,9 @@ from spotify_project.client import SpotifyClient
 
 
 def _track_item(idx: int, artist_id: str = "a1") -> dict[str, Any]:
-    """Build a spotipy-shaped playlist-item dict for one fake track."""
+    """Build a spotipy-shaped playlist-item dict (Feb-2026-schema) for one fake track."""
     return {
-        "track": {
+        "item": {
             "id": f"t{idx}",
             "name": f"Track {idx}",
             "type": "track",
@@ -40,7 +40,7 @@ def test_playlist_paginates_and_enriches_artists(tmp_path: Path) -> None:
         "public": True,
         "collaborative": False,
         "description": "",
-        "tracks": {
+        "items": {
             "items": [_track_item(i) for i in range(100)],
             "next": "next_url",
         },
@@ -48,15 +48,11 @@ def test_playlist_paginates_and_enriches_artists(tmp_path: Path) -> None:
     fake_sp.next.side_effect = [
         {"items": [_track_item(i) for i in range(100, 150)], "next": None},
     ]
-    fake_sp.artists.return_value = {
-        "artists": [
-            {
-                "id": "a1",
-                "name": "Artist 1",
-                "genres": ["rock", "indie"],
-                "popularity": 70,
-            },
-        ],
+    fake_sp.artist.return_value = {
+        "id": "a1",
+        "name": "Artist 1",
+        "genres": ["rock", "indie"],
+        "popularity": 70,
     }
 
     client = SpotifyClient(sp=fake_sp, cache=cache)
