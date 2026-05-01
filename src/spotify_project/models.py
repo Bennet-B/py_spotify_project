@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
@@ -66,7 +69,7 @@ class Track:
         is_local: True for user-uploaded local files.
 
     Raises:
-        ValueError: If popularity is outside [0, 100].
+        ValueError: If popularity is outside [0, 100], or if duration_ms is negative.
     """
 
     id: str | None
@@ -85,6 +88,8 @@ class Track:
             raise ValueError(
                 f"Track popularity must be in [0, 100], got {self.popularity}"
             )
+        if self.duration_ms < 0:
+            raise ValueError(f"Track duration_ms must be >= 0, got {self.duration_ms}")
 
     @property
     def primary_artist(self) -> Artist | None:
@@ -112,22 +117,23 @@ class Track:
         """
         track_data = item["track"]
         is_local = item.get("is_local", False)
-        artist_refs = track_data.get("artists", [])
-        resolved_artists: tuple[Artist, ...] = tuple(
-            artist_by_id[a["id"]]
-            for a in artist_refs
-            if a.get("id") and a["id"] in artist_by_id
-        )
+        resolved: list[Artist] = []
+        for a in track_data.get("artists", []):
+            aid = a.get("id")
+            if not aid:
+                continue
+            if aid not in artist_by_id:
+                _log.warning(
+                    "artist %s not in lookup; track may lose primary_artist", aid
+                )
+                continue
+            resolved.append(artist_by_id[aid])
         added_at_raw = item.get("added_at")
-        added_at = (
-            datetime.fromisoformat(added_at_raw.replace("Z", "+00:00"))
-            if added_at_raw
-            else None
-        )
+        added_at = datetime.fromisoformat(added_at_raw) if added_at_raw else None
         return cls(
             id=track_data.get("id"),
             name=track_data.get("name", ""),
-            artists=resolved_artists,
+            artists=tuple(resolved),
             album_name=track_data.get("album", {}).get("name", ""),
             release_date=track_data.get("album", {}).get("release_date"),
             duration_ms=int(track_data.get("duration_ms", 0)),
