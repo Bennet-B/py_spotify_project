@@ -3,8 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
+import pytest
+from matplotlib.figure import Figure
 
-from spotify_project.analyzer import GenreAnalyzer, YearAnalyzer
+from spotify_project.analyzer import (
+    Analyzer,
+    GenreAnalyzer,
+    PlaylistAnalyzer,
+    YearAnalyzer,
+)
 
 
 def _frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
@@ -43,3 +50,22 @@ def test_year_analyzer_extracts_release_year() -> None:
     counts = dict(zip(summary["year"], summary["count"], strict=True))
     assert counts[2020] == 2
     assert counts[1979] == 1
+
+
+def test_year_analyzer_handles_missing_release_date_column() -> None:
+    """YearAnalyzer returns an empty summary when release_date column is absent."""
+    df = _frame([{"track_id": "1", "name": "Song"}])
+    summary = YearAnalyzer().analyze(df)
+    assert summary.empty
+
+
+def test_plot_all_with_no_analyzers_does_not_crash() -> None:
+    """PlaylistAnalyzer.plot_all returns early when the analyzer list is empty."""
+    pa = PlaylistAnalyzer(df=pd.DataFrame(), analyzers=[])
+    pa.plot_all(Figure())
+
+
+def test_analyzer_subclass_without_title_raises() -> None:
+    """Subclassing Analyzer without setting `title` fails at class-creation time."""
+    with pytest.raises(TypeError, match="title"):
+        type("_BadAnalyzer", (Analyzer,), {})

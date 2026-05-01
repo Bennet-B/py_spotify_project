@@ -16,13 +16,24 @@ class Analyzer(ABC):
 
     Concrete subclasses override ``analyze`` (returns a summary DataFrame)
     and ``plot`` (renders the result onto a Matplotlib Axes provided by
-    the caller).
+    the caller). Each subclass MUST also declare a non-empty class-level
+    ``title``; this is enforced at class-definition time.
 
     Attributes:
-        title: Short title; appears as the plot's title.
+        title: Short title; appears as the plot's title and is used as the
+            key in ``PlaylistAnalyzer.run_all``'s result dict, so collisions
+            between subclasses would silently overwrite results.
     """
 
-    title: ClassVar[str] = ""
+    title: ClassVar[str]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if not getattr(cls, "title", None):
+            raise TypeError(
+                f"Analyzer subclass {cls.__name__} must define a non-empty "
+                "class attribute 'title'"
+            )
 
     @abstractmethod
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -105,7 +116,7 @@ class YearAnalyzer(Analyzer):
             DataFrame with columns ``year`` (int) and ``count``, sorted
             ascending by year.
         """
-        if df.empty:
+        if df.empty or "release_date" not in df.columns:
             return pd.DataFrame({"year": [], "count": []})
         years = (
             pd.to_numeric(df["release_date"].str.slice(0, 4), errors="coerce")
@@ -209,6 +220,8 @@ class PlaylistAnalyzer:
                 }
             )
         df = pd.DataFrame(rows)
+        if not df.empty:
+            df["release_year"] = df["release_year"].astype("Int64")
         return cls(df=df, analyzers=analyzers)
 
     def run_all(self) -> dict[str, pd.DataFrame]:
@@ -218,15 +231,21 @@ class PlaylistAnalyzer:
     def plot_all(self, fig: Figure) -> None:
         """Lay out one subplot per analyzer in a vertical stack on ``fig``.
 
+        Reuses the result of ``run_all`` so each analyzer's ``analyze``
+        runs exactly once per call (instead of twice if the caller also
+        invoked ``run_all`` separately).
+
         Args:
             fig: Matplotlib Figure to subdivide with subplots.
         """
         n = len(self.analyzers)
+        if n == 0:
+            return
+        summaries = self.run_all()
         axes = fig.subplots(n, 1)
         axes_list = [axes] if n == 1 else list(axes)
         for ax, analyzer in zip(axes_list, self.analyzers, strict=False):
-            summary = analyzer.analyze(self.df)
-            analyzer.plot(ax, summary)
+            analyzer.plot(ax, summaries[analyzer.title])
         fig.tight_layout()
 
     def to_parquet(self, path: Path) -> None:
