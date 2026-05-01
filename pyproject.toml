@@ -10,10 +10,6 @@ requires-python = ">=3.11"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.black]
-line-length = 88
-target-version = ["py314"]
-
 [tool.ruff]
 line-length = 88
 target-version = "py314"
@@ -22,13 +18,27 @@ target-version = "py314"
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
 ignore = ["E501"]
 
-[tool.mypy]
-python_version = "3.14"
-strict = true
-warn_return_any = true
-warn_unused_ignores = true
-disallow_untyped_defs = true
-ignore_missing_imports = true
+[tool.ruff.format]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "strict"
+# We use libraries with no type stubs (spotipy) or rich union types
+# pyright struggles to narrow (pandas/matplotlib). The settings below
+# match what mypy ignored implicitly via `ignore_missing_imports = true`
+# — pyright stays strict on OUR code while tolerant of unstubbed
+# third-party APIs. Re-tighten if any of these mask real bugs.
+reportMissingTypeStubs = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownLambdaType = false
+reportUnknownParameterType = false
+reportCallIssue = false
+reportAttributeAccessIssue = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

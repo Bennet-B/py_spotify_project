@@ -103,10 +103,10 @@ class SpotifyClient:
         Filters out ``None`` entries — Spotify occasionally returns null
         slots in the array for deleted or otherwise inaccessible playlists.
         """
-        results = self.sp.current_user_playlists()
+        results = cast(dict[str, Any], self.sp.current_user_playlists())
         items: list[dict[str, Any]] = [p for p in results["items"] if p is not None]
         while results.get("next"):
-            results = self.sp.next(results)
+            results = cast(dict[str, Any], self.sp.next(results))
             items.extend(p for p in results["items"] if p is not None)
         return items
 
@@ -132,8 +132,9 @@ class SpotifyClient:
         """
         cache_key = f"playlist/{playlist_id}"
         cached = None if force_refresh else self.cache.get(cache_key)
+        data: dict[str, Any]
         if cached is None:
-            data = self.sp.playlist(playlist_id)
+            data = cast(dict[str, Any], self.sp.playlist(playlist_id))
             if not data.get("items"):
                 raise ValueError(
                     f"Playlist {playlist_id} returned no track details. "
@@ -142,9 +143,9 @@ class SpotifyClient:
                     "where the 'owner' column shows your display name."
                 )
             track_items: list[dict[str, Any]] = list(data["items"]["items"])
-            page = data["items"]
+            page: dict[str, Any] = data["items"]
             while page.get("next"):
-                page = self.sp.next(page)
+                page = cast(dict[str, Any], self.sp.next(page))
                 track_items.extend(page["items"])
             data["items"]["items"] = track_items
             data["items"].pop("next", None)
@@ -201,8 +202,9 @@ class SpotifyClient:
         for artist_id in ids:
             cache_key = f"artist/{artist_id}"
             cached = None if force_refresh else self.cache.get(cache_key)
+            data: dict[str, Any]
             if cached is None:
-                data = self.sp.artist(artist_id)
+                data = cast(dict[str, Any], self.sp.artist(artist_id))
                 self.cache.put(cache_key, data)
             else:
                 data = cached

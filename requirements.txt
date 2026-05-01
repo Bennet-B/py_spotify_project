@@ -9,6 +9,5 @@ ipykernel>=6.29,<7
 
 # Dev
 pytest>=8.0,<9
-black>=24.0
 ruff>=0.5
-mypy>=1.10
+pyright>=1.1.350

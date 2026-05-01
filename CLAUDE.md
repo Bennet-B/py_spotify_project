@@ -64,7 +64,7 @@ py_spotify_project/
 ├── .gitignore                 # .env, .cache, .venv/, __pycache__/, *.ipynb_checkpoints
 ├── README.md
 ├── requirements.txt
-├── pyproject.toml             # black + ruff + mypy config
+├── pyproject.toml             # ruff + pyright config
 ├── docs/
 │   └── superpowers/
 │       └── specs/
