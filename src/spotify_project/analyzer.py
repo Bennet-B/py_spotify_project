@@ -177,7 +177,7 @@ class YearAnalyzer(Analyzer):
             summary["year"],
             summary["count"],
             width=self.bucket_size * 0.9,
-            align="edge",
+            align="edge" if self.bucket_size > 1 else "center",
         )
         xlabel = (
             "Year"
