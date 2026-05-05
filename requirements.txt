@@ -11,3 +11,4 @@ ipykernel>=6.29,<7
 pytest>=8.0,<9
 ruff>=0.5
 pyright>=1.1.350
+pandas-stubs>=2.2

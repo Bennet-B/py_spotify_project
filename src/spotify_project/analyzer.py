@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+# matplotlib stubs use `**kwargs: Unknown` on every Axes method (text, bar,
+# barh, set_xlabel, set_ylabel, set_title, invert_yaxis, tight_layout, …).
+# The methods themselves are fully typed; only the pass-through kwargs are
+# Unknown.  A per-file disable is the narrowest scope available — there is
+# no per-call-site workaround for `**kwargs: Unknown` propagation.
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar

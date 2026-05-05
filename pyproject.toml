@@ -26,19 +26,12 @@ pythonVersion = "3.14"
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "strict"
-# We use libraries with no type stubs (spotipy) or rich union types
-# pyright struggles to narrow (pandas/matplotlib). The settings below
-# match what mypy ignored implicitly via `ignore_missing_imports = true`
-# — pyright stays strict on OUR code while tolerant of unstubbed
-# third-party APIs. Re-tighten if any of these mask real bugs.
+# Only relaxation: spotipy ships inline type annotations but no .pyi
+# stub files, so pyright surfaces a "missing stub" warning for the
+# import itself. Spotipy's inline annotations are then used normally.
+# Every other strict report stays on; per-line `# pyright: ignore[
+# reportXXX]` is the way to handle individual unfixable cases.
 reportMissingTypeStubs = false
-reportUnknownMemberType = false
-reportUnknownArgumentType = false
-reportUnknownVariableType = false
-reportUnknownLambdaType = false
-reportUnknownParameterType = false
-reportCallIssue = false
-reportAttributeAccessIssue = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
