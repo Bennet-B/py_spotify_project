@@ -394,6 +394,82 @@ class PopularityAnalyzer(Analyzer):
         ax.set_title(f"{self.title} (mean ≈ {weighted_mean:.1f})")
 
 
+class DurationAnalyzer(Analyzer):
+    """Track-duration distribution (in minutes) plus playlist total runtime.
+
+    Args:
+        bins: Number of equal-width bins; default 20. Range is inferred from
+            the data (no fixed [0, 100] like popularity). Must be positive.
+
+    Raises:
+        ValueError: If ``bins`` is not a positive integer.
+    """
+
+    title = "Track Duration Distribution"
+
+    def __init__(self, bins: int = 20) -> None:
+        if bins < 1:
+            raise ValueError(f"bins must be a positive integer, got {bins}")
+        self.bins = bins
+
+    def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Bin track durations and report exact minutes per bin.
+
+        Args:
+            df: Track-level DataFrame with a ``duration_min`` column.
+
+        Returns:
+            DataFrame with columns ``bin_low``, ``bin_high``, ``count``,
+            ``minutes_in_bin``. ``minutes_in_bin`` is the exact sum of
+            durations falling in the bin — useful for total-runtime
+            annotation in ``plot``.
+        """
+        empty = pd.DataFrame(
+            {"bin_low": [], "bin_high": [], "count": [], "minutes_in_bin": []}
+        )
+        if df.empty or "duration_min" not in df.columns:
+            return empty
+        values = pd.to_numeric(df["duration_min"], errors="coerce").dropna()
+        if values.empty:
+            return empty
+        counts, edges = np.histogram(values, bins=self.bins)
+        # Exact minutes per bin: digitize each value to its bin index, then
+        # sum durations weighted into bincount. np.digitize uses 1-based
+        # indices for values inside the range; subtract 1 and clip the last
+        # edge so the rightmost value lands in the final bin (matches
+        # np.histogram's right-inclusive last bin).
+        bin_idx = np.clip(np.digitize(values, edges) - 1, 0, self.bins - 1)
+        minutes_in_bin = np.bincount(bin_idx, weights=values, minlength=self.bins)
+        return pd.DataFrame(
+            {
+                "bin_low": edges[:-1],
+                "bin_high": edges[1:],
+                "count": counts,
+                "minutes_in_bin": minutes_in_bin,
+            }
+        )
+
+    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+        """Render a duration histogram with total-runtime annotation in the title.
+
+        Args:
+            ax: Matplotlib Axes to draw on.
+            summary: Output of ``analyze``.
+        """
+        if summary.empty:
+            ax.text(0.5, 0.5, "No duration data", ha="center", va="center")
+            ax.set_title(self.title)
+            return
+        widths = summary["bin_high"] - summary["bin_low"]
+        ax.bar(summary["bin_low"], summary["count"], width=widths, align="edge")
+        total_min = summary["minutes_in_bin"].sum()
+        hours = int(total_min // 60)
+        minutes = int(total_min % 60)
+        ax.set_xlabel("Duration (minutes)")
+        ax.set_ylabel("Track count")
+        ax.set_title(f"{self.title} (total runtime: {hours}h {minutes}m)")
+
+
 class PlaylistAnalyzer:
     """Orchestrator: holds a track DataFrame and runs registered Analyzers.
 

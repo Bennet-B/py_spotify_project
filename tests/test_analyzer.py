@@ -284,3 +284,53 @@ def test_popularity_analyzer_rejects_non_positive_bins() -> None:
 
     with pytest.raises(ValueError, match="bins"):
         PopularityAnalyzer(bins=0)
+
+
+def test_duration_analyzer_returns_bins_with_exact_minutes_per_bin() -> None:
+    """DurationAnalyzer reports both track count and exact total minutes per bin.
+
+    The ``minutes_in_bin`` column is the exact sum of durations falling in
+    that bin (not a midpoint approximation), so plot() can annotate total
+    runtime accurately.
+    """
+    from spotify_project.analyzer import DurationAnalyzer
+
+    df = _frame(
+        [
+            {"track_id": "1", "duration_min": 2.0},
+            {"track_id": "2", "duration_min": 2.5},
+            {"track_id": "3", "duration_min": 4.0},
+            {"track_id": "4", "duration_min": 5.5},
+        ]
+    )
+    summary = DurationAnalyzer(bins=4).analyze(df)
+    assert list(summary.columns) == ["bin_low", "bin_high", "count", "minutes_in_bin"]
+    assert summary["count"].sum() == 4
+    assert summary["minutes_in_bin"].sum() == pytest.approx(14.0)
+
+
+def test_duration_analyzer_handles_single_track() -> None:
+    """DurationAnalyzer returns a single-row summary for a single-track df."""
+    from spotify_project.analyzer import DurationAnalyzer
+
+    df = _frame([{"track_id": "1", "duration_min": 3.5}])
+    summary = DurationAnalyzer(bins=10).analyze(df)
+    assert summary["count"].sum() == 1
+    assert summary["minutes_in_bin"].sum() == pytest.approx(3.5)
+
+
+def test_duration_analyzer_handles_empty_df() -> None:
+    """DurationAnalyzer returns an empty summary for an empty df."""
+    from spotify_project.analyzer import DurationAnalyzer
+
+    summary = DurationAnalyzer().analyze(_frame([]))
+    assert summary.empty
+    assert list(summary.columns) == ["bin_low", "bin_high", "count", "minutes_in_bin"]
+
+
+def test_duration_analyzer_rejects_non_positive_bins() -> None:
+    """DurationAnalyzer.__init__ rejects bins < 1."""
+    from spotify_project.analyzer import DurationAnalyzer
+
+    with pytest.raises(ValueError, match="bins"):
+        DurationAnalyzer(bins=0)
