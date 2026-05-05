@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 
 import pandas as pd
@@ -97,3 +98,134 @@ def test_year_analyzer_rejects_non_positive_bucket_size() -> None:
     """YearAnalyzer's __init__ rejects bucket_size < 1."""
     with pytest.raises(ValueError, match="bucket_size"):
         YearAnalyzer(bucket_size=0)
+
+
+def test_from_playlist_exposes_artist_id_and_name_lists() -> None:
+    """PlaylistAnalyzer.from_playlist surfaces parallel artist_ids/names lists.
+
+    ArtistAnalyzer needs grouping-friendly columns (lists, not pipe-joined
+    strings). This test pins the schema additions; if they regress, the
+    analyzer breaks.
+    """
+    from datetime import datetime
+
+    from spotify_project.models import Artist, Playlist, Track
+
+    a1 = Artist(id="a1", name="Alice", genres=("rock",), popularity=50)
+    a2 = Artist(id="a2", name="Bob", genres=("indie",), popularity=40)
+    track = Track(
+        id="t1",
+        name="Song",
+        artists=(a1, a2),
+        album_name="Album",
+        release_date="2020-01-01",
+        duration_ms=200_000,
+        popularity=60,
+        explicit=False,
+        added_at=datetime(2024, 6, 1, tzinfo=UTC),
+        is_local=False,
+    )
+    playlist = Playlist(
+        id="pl1",
+        name="Test",
+        owner_display_name="Bennet",
+        public=True,
+        collaborative=False,
+        description="",
+        tracks=(track,),
+    )
+    pa = PlaylistAnalyzer.from_playlist(playlist)
+    row = pa.df.iloc[0]
+    assert row["artist_ids"] == ["a1", "a2"]
+    assert row["artist_names"] == ["Alice", "Bob"]
+
+
+def test_artist_analyzer_counts_all_artists_by_default() -> None:
+    """ArtistAnalyzer with default primary_only=False counts every artist on every track.
+
+    A track with two artists contributes 1 to each artist's track_count and
+    its full duration to each artist's total_minutes (naive credit).
+    """
+    from spotify_project.analyzer import ArtistAnalyzer
+
+    df = _frame(
+        [
+            {
+                "track_id": "t1",
+                "artist_ids": ["a1", "a2"],
+                "artist_names": ["Alice", "Bob"],
+                "primary_artist_id": "a1",
+                "primary_artist_name": "Alice",
+                "duration_min": 4.0,
+            },
+            {
+                "track_id": "t2",
+                "artist_ids": ["a1"],
+                "artist_names": ["Alice"],
+                "primary_artist_id": "a1",
+                "primary_artist_name": "Alice",
+                "duration_min": 3.0,
+            },
+            {
+                "track_id": "t3",
+                "artist_ids": ["a2"],
+                "artist_names": ["Bob"],
+                "primary_artist_id": "a2",
+                "primary_artist_name": "Bob",
+                "duration_min": 5.0,
+            },
+        ]
+    )
+    summary = ArtistAnalyzer(top_n=10).analyze(df)
+    by_id = {row["artist_id"]: row for _, row in summary.iterrows()}
+    assert by_id["a1"]["track_count"] == 2
+    assert by_id["a1"]["total_minutes"] == 7.0
+    assert by_id["a1"]["artist_name"] == "Alice"
+    assert by_id["a2"]["track_count"] == 2
+    assert by_id["a2"]["total_minutes"] == 9.0
+
+
+def test_artist_analyzer_primary_only_mode_ignores_collaborators() -> None:
+    """ArtistAnalyzer(primary_only=True) only counts the lead artist per track."""
+    from spotify_project.analyzer import ArtistAnalyzer
+
+    df = _frame(
+        [
+            {
+                "track_id": "t1",
+                "artist_ids": ["a1", "a2"],
+                "artist_names": ["Alice", "Bob"],
+                "primary_artist_id": "a1",
+                "primary_artist_name": "Alice",
+                "duration_min": 4.0,
+            },
+            {
+                "track_id": "t2",
+                "artist_ids": ["a2"],
+                "artist_names": ["Bob"],
+                "primary_artist_id": "a2",
+                "primary_artist_name": "Bob",
+                "duration_min": 5.0,
+            },
+        ]
+    )
+    summary = ArtistAnalyzer(primary_only=True).analyze(df)
+    by_id = {row["artist_id"]: row for _, row in summary.iterrows()}
+    # Bob is a collaborator on t1, so primary-only does NOT credit him for that track.
+    assert by_id["a1"]["track_count"] == 1
+    assert by_id["a2"]["track_count"] == 1
+    assert by_id["a2"]["total_minutes"] == 5.0
+
+
+def test_artist_analyzer_returns_empty_summary_for_empty_df() -> None:
+    """ArtistAnalyzer.analyze returns an empty summary for an empty df."""
+    from spotify_project.analyzer import ArtistAnalyzer
+
+    summary = ArtistAnalyzer().analyze(_frame([]))
+    assert summary.empty
+    assert list(summary.columns) == [
+        "artist_id",
+        "artist_name",
+        "track_count",
+        "total_minutes",
+    ]

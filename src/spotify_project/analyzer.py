@@ -189,6 +189,131 @@ class YearAnalyzer(Analyzer):
         ax.set_title(self.title)
 
 
+def _zip_pairs(row: pd.Series[Any]) -> list[tuple[str, str]]:
+    """Return a list of (artist_id, artist_name) tuples from a track row.
+
+    Used by ArtistAnalyzer to explode parallel list columns in lock-step.
+
+    Args:
+        row: A DataFrame row with ``artist_ids`` and ``artist_names`` list
+            columns.
+
+    Returns:
+        List of ``(id, name)`` tuples, one per artist.
+    """
+    return list(zip(row["artist_ids"], row["artist_names"], strict=True))
+
+
+class ArtistAnalyzer(Analyzer):
+    """Top artists by track count and total minutes.
+
+    With ``primary_only=False`` (default), every artist on every track gets
+    naive credit — a 4-minute track with two artists adds 4 minutes to each.
+    With ``primary_only=True``, only the first-listed (lead) artist on each
+    track is counted.
+
+    Args:
+        top_n: How many artists to return; default 15.
+        primary_only: If True, count only each track's primary artist;
+            default False (count all listed artists).
+    """
+
+    title = "Top Artists"
+
+    def __init__(self, top_n: int = 15, primary_only: bool = False) -> None:
+        self.top_n = top_n
+        self.primary_only = primary_only
+
+    def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Aggregate track count and total minutes per artist.
+
+        Args:
+            df: Track-level DataFrame with either ``artist_ids`` /
+                ``artist_names`` (list columns; used when
+                ``primary_only=False``) or ``primary_artist_id`` /
+                ``primary_artist_name`` (used when ``primary_only=True``).
+
+        Returns:
+            DataFrame with columns ``artist_id``, ``artist_name``,
+            ``track_count``, ``total_minutes``, sorted descending by
+            ``track_count``, limited to ``top_n`` rows.
+        """
+        empty = pd.DataFrame(
+            {
+                "artist_id": [],
+                "artist_name": [],
+                "track_count": [],
+                "total_minutes": [],
+            }
+        )
+        if df.empty:
+            return empty
+
+        if self.primary_only:
+            required = {"primary_artist_id", "primary_artist_name", "duration_min"}
+            if not required.issubset(df.columns):
+                return empty
+            source = df[
+                ["primary_artist_id", "primary_artist_name", "duration_min"]
+            ].rename(
+                columns={
+                    "primary_artist_id": "artist_id",
+                    "primary_artist_name": "artist_name",
+                }
+            )
+        else:
+            required = {"artist_ids", "artist_names", "duration_min"}
+            if not required.issubset(df.columns):
+                return empty
+            # Explode artist_ids and artist_names in lock-step so each
+            # exploded row holds the matching name. Pandas explode preserves
+            # ordering within the row, so the parallelism is preserved.
+            exploded = df[["artist_ids", "artist_names", "duration_min"]].copy()
+            exploded["pair"] = exploded.apply(_zip_pairs, axis=1)
+            exploded = exploded.explode("pair").dropna(subset=["pair"])
+            if exploded.empty:
+                return empty
+            source = pd.DataFrame(
+                {
+                    "artist_id": exploded["pair"].map(lambda p: p[0]),
+                    "artist_name": exploded["pair"].map(lambda p: p[1]),
+                    "duration_min": exploded["duration_min"],
+                }
+            )
+
+        source = source.dropna(subset=["artist_id"])
+        if source.empty:
+            return empty
+        grouped = (
+            source.groupby(["artist_id", "artist_name"], as_index=False)
+            .agg(
+                track_count=("duration_min", "size"),
+                total_minutes=("duration_min", "sum"),
+            )
+            .sort_values("track_count", ascending=False)
+            .head(self.top_n)
+            .reset_index(drop=True)
+        )
+        return grouped
+
+    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+        """Render a horizontal bar chart of artists by track count.
+
+        Args:
+            ax: Matplotlib Axes to draw on.
+            summary: Output of ``analyze``; must include ``artist_name``
+                and ``track_count`` columns.
+        """
+        if summary.empty:
+            ax.text(0.5, 0.5, "No artist data", ha="center", va="center")
+            ax.set_title(self.title)
+            return
+        ax.barh(summary["artist_name"], summary["track_count"])
+        ax.invert_yaxis()
+        ax.set_xlabel("Track count")
+        ax.set_title(self.title)
+
+
 class PlaylistAnalyzer:
     """Orchestrator: holds a track DataFrame and runs registered Analyzers.
 
@@ -247,6 +372,8 @@ class PlaylistAnalyzer:
                     "primary_artist_id": primary.id if primary else None,
                     "primary_artist_name": primary.name if primary else "",
                     "all_artists": " | ".join(a.name for a in t.artists),
+                    "artist_ids": [a.id for a in t.artists],
+                    "artist_names": [a.name for a in t.artists],
                     "album_name": t.album_name,
                     "release_date": release_date,
                     "release_year": release_year,
