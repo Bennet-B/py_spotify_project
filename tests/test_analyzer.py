@@ -69,3 +69,31 @@ def test_analyzer_subclass_without_title_raises() -> None:
     """Subclassing Analyzer without setting `title` fails at class-creation time."""
     with pytest.raises(TypeError, match="title"):
         type("_BadAnalyzer", (Analyzer,), {})
+
+
+def test_year_analyzer_groups_into_decade_buckets() -> None:
+    """YearAnalyzer with bucket_size=10 groups years into decade ranges.
+
+    The ``year`` column reports the bucket's lower bound (e.g. 1970 means
+    1970-1979 inclusive); the ``count`` column sums tracks across the bucket.
+    """
+    df = _frame(
+        [
+            {"track_id": "1", "release_date": "1972-05-01"},
+            {"track_id": "2", "release_date": "1979-12-31"},
+            {"track_id": "3", "release_date": "1980-01-01"},
+            {"track_id": "4", "release_date": "2021-06-01"},
+            {"track_id": "5", "release_date": "2024-03-15"},
+        ]
+    )
+    summary = YearAnalyzer(bucket_size=10).analyze(df)
+    counts = dict(zip(summary["year"], summary["count"], strict=True))
+    assert counts[1970] == 2
+    assert counts[1980] == 1
+    assert counts[2020] == 2
+
+
+def test_year_analyzer_rejects_non_positive_bucket_size() -> None:
+    """YearAnalyzer's __init__ rejects bucket_size < 1."""
+    with pytest.raises(ValueError, match="bucket_size"):
+        YearAnalyzer(bucket_size=0)

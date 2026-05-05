@@ -105,22 +105,41 @@ class GenreAnalyzer(Analyzer):
 
 
 class YearAnalyzer(Analyzer):
-    """Release-year distribution, robust to year-only release_date strings."""
+    """Release-year distribution, robust to year-only release_date strings.
+
+    Args:
+        bucket_size: Year-bucket width. ``1`` (default) yields per-year bars.
+            ``5`` groups into 5-year buckets (1970, 1975, 1980, ...); ``10``
+            into decades (1970, 1980, ...). The reported ``year`` value is
+            always the bucket's lower bound. Must be a positive integer.
+
+    Raises:
+        ValueError: If ``bucket_size`` is not a positive integer.
+    """
 
     title = "Release Year Distribution"
 
+    def __init__(self, bucket_size: int = 1) -> None:
+        if bucket_size < 1:
+            raise ValueError(
+                f"bucket_size must be a positive integer, got {bucket_size}"
+            )
+        self.bucket_size = bucket_size
+
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Count tracks per release year.
+        """Count tracks per release year (or per year-bucket).
 
         Handles both full ISO dates (``2020-01-01``) and year-only strings
         (``1979``). Rows with ``None`` or unparseable release_date are dropped.
+        When ``bucket_size > 1``, years are floor-divided onto bucket
+        boundaries before counting.
 
         Args:
             df: Track-level DataFrame with a ``release_date`` column.
 
         Returns:
-            DataFrame with columns ``year`` (int) and ``count``, sorted
-            ascending by year.
+            DataFrame with columns ``year`` (int — bucket lower bound) and
+            ``count``, sorted ascending by year.
         """
         if df.empty or "release_date" not in df.columns:
             return pd.DataFrame({"year": [], "count": []})
@@ -131,6 +150,8 @@ class YearAnalyzer(Analyzer):
         )
         if years.empty:
             return pd.DataFrame({"year": [], "count": []})
+        if self.bucket_size > 1:
+            years = (years // self.bucket_size) * self.bucket_size
         return (
             years.value_counts()
             .sort_index()
@@ -139,7 +160,10 @@ class YearAnalyzer(Analyzer):
         )
 
     def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
-        """Render a vertical bar chart of track counts per year.
+        """Render a vertical bar chart of track counts per year-bucket.
+
+        Bar width is proportional to ``bucket_size`` so adjacent buckets
+        touch (decade plot looks like a histogram, not isolated columns).
 
         Args:
             ax: Matplotlib Axes to draw on.
@@ -149,8 +173,18 @@ class YearAnalyzer(Analyzer):
             ax.text(0.5, 0.5, "No year data", ha="center", va="center")
             ax.set_title(self.title)
             return
-        ax.bar(summary["year"], summary["count"])
-        ax.set_xlabel("Year")
+        ax.bar(
+            summary["year"],
+            summary["count"],
+            width=self.bucket_size * 0.9,
+            align="edge",
+        )
+        xlabel = (
+            "Year"
+            if self.bucket_size == 1
+            else f"Year ({self.bucket_size}-year buckets)"
+        )
+        ax.set_xlabel(xlabel)
         ax.set_ylabel("Track count")
         ax.set_title(self.title)
 
