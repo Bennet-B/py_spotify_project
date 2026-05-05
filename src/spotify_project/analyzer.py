@@ -462,9 +462,9 @@ class DurationAnalyzer(Analyzer):
             return
         widths = summary["bin_high"] - summary["bin_low"]
         ax.bar(summary["bin_low"], summary["count"], width=widths, align="edge")
-        total_min = summary["minutes_in_bin"].sum()
-        hours = int(total_min // 60)
-        minutes = int(total_min % 60)
+        total_min = round(summary["minutes_in_bin"].sum())
+        hours = total_min // 60
+        minutes = total_min % 60
         ax.set_xlabel("Duration (minutes)")
         ax.set_ylabel("Track count")
         ax.set_title(f"{self.title} (total runtime: {hours}h {minutes}m)")
