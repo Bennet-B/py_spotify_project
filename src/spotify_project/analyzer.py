@@ -6,7 +6,6 @@ from __future__ import annotations
 # The methods themselves are fully typed; only the pass-through kwargs are
 # Unknown.  A per-file disable is the narrowest scope available — there is
 # no per-call-site workaround for `**kwargs: Unknown` propagation.
-
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar

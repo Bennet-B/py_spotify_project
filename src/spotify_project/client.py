@@ -6,7 +6,6 @@ from __future__ import annotations
 # spotipy uses `**kwargs` forwarding internally.  All call sites already
 # wrap the return value with `cast(dict[str, Any], …)`, so the Unknown
 # only surfaces at the method-type level, not in our downstream usage.
-
 import logging
 import os
 from collections.abc import Iterable
