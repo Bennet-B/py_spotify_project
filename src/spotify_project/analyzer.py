@@ -236,7 +236,16 @@ class ArtistAnalyzer(Analyzer):
         Returns:
             DataFrame with columns ``artist_id``, ``artist_name``,
             ``track_count``, ``total_minutes``, sorted descending by
-            ``track_count``, limited to ``top_n`` rows.
+            ``track_count``, limited to ``top_n`` rows. Ties at the
+            ``top_n`` cutoff are broken by ``artist_id`` ascending
+            (groupby's default ordering).
+
+        Raises:
+            ValueError: If ``primary_only=False`` and the per-row ``artist_ids``
+                and ``artist_names`` lists are not the same length. This
+                surfaces schema corruption — the rows produced by
+                ``PlaylistAnalyzer.from_playlist`` are guaranteed to be
+                in lock-step.
         """
         empty = pd.DataFrame(
             {
