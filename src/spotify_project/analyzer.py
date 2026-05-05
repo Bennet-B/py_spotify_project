@@ -470,6 +470,96 @@ class DurationAnalyzer(Analyzer):
         ax.set_title(f"{self.title} (total runtime: {hours}h {minutes}m)")
 
 
+class TimelineAnalyzer(Analyzer):
+    """Track-addition timeline, grouped by period.
+
+    Falls back to ``release_date`` when ``added_at`` is entirely missing —
+    typical for Spotify-curated playlists, whose API responses set
+    ``added_at: null`` on every item.
+
+    Note:
+        ``_last_source`` is mutated by ``analyze()`` and read by ``plot()``
+        for the chart title annotation. This is a known limitation: the
+        instance is not safe to share across threads or to call ``plot``
+        before ``analyze`` has been called at least once.
+
+    Args:
+        freq: pandas Period frequency string. Default ``"M"`` (month).
+            ``"Y"`` for yearly, ``"W"`` for weekly. Validated by pandas.
+    """
+
+    title = "Track Timeline"
+
+    def __init__(self, freq: str = "M") -> None:
+        self.freq = freq
+        # Tracks which column ``analyze`` last used, so ``plot`` can label
+        # the chart correctly. Set in analyze(); read in plot().
+        self._last_source: str = "added_at"
+
+    def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Group track additions (or release dates) into time-period buckets.
+
+        Args:
+            df: Track-level DataFrame; must contain ``added_at`` and
+                optionally ``release_date``.
+
+        Returns:
+            DataFrame with columns ``period`` (pandas Period) and ``count``,
+            sorted ascending by period.
+        """
+        empty = pd.DataFrame({"period": [], "count": []})
+        if df.empty:
+            self._last_source = "added_at"
+            return empty
+
+        source_col = "added_at"
+        raw: pd.Series[Any] = (
+            df["added_at"] if "added_at" in df.columns else pd.Series([], dtype=object)
+        )
+        values: pd.Series[Any] = pd.to_datetime(raw, errors="coerce", utc=True)
+        if values.isna().all() and "release_date" in df.columns:
+            source_col = "release_date"
+            values = pd.to_datetime(
+                df["release_date"].astype(str), errors="coerce", utc=True
+            )
+        self._last_source = source_col
+
+        values = values.dropna()
+        if values.empty:
+            return empty
+
+        periods: pd.Series[Any] = values.dt.to_period(self.freq)  # pyright: ignore[reportUnknownMemberType]
+        result: pd.DataFrame = (
+            periods.value_counts()
+            .sort_index()
+            .rename_axis("period")
+            .reset_index(name="count")
+        )
+        return result
+
+    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+        """Render an area-style line chart of track additions over time.
+
+        Args:
+            ax: Matplotlib Axes to draw on.
+            summary: Output of ``analyze``; columns ``period`` and ``count``.
+        """
+        if summary.empty:
+            ax.text(0.5, 0.5, "No timeline data", ha="center", va="center")
+            ax.set_title(self.title)
+            return
+        # Plot against period.start_time so matplotlib gets real datetimes.
+        x: pd.Series[Any] = summary["period"].apply(lambda p: p.start_time)  # pyright: ignore[reportUnknownVariableType,reportUnknownArgumentType,reportUnknownLambdaType,reportUnknownMemberType]
+        ax.fill_between(x, summary["count"], step="mid", alpha=0.4)
+        ax.plot(x, summary["count"], marker="o")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Tracks added")
+        source_label = (
+            "added_at" if self._last_source == "added_at" else "release_date (fallback)"
+        )
+        ax.set_title(f"{self.title} (source: {source_label})")
+
+
 class PlaylistAnalyzer:
     """Orchestrator: holds a track DataFrame and runs registered Analyzers.
 

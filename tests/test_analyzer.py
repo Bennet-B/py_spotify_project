@@ -334,3 +334,61 @@ def test_duration_analyzer_rejects_non_positive_bins() -> None:
 
     with pytest.raises(ValueError, match="bins"):
         DurationAnalyzer(bins=0)
+
+
+def test_timeline_analyzer_groups_added_at_by_month_by_default() -> None:
+    """TimelineAnalyzer groups added_at into monthly periods by default."""
+    from datetime import datetime
+
+    from spotify_project.analyzer import TimelineAnalyzer
+
+    df = _frame(
+        [
+            {"track_id": "1", "added_at": datetime(2024, 1, 5, tzinfo=UTC)},
+            {"track_id": "2", "added_at": datetime(2024, 1, 28, tzinfo=UTC)},
+            {"track_id": "3", "added_at": datetime(2024, 3, 10, tzinfo=UTC)},
+            {"track_id": "4", "added_at": None},
+        ]
+    )
+    summary = TimelineAnalyzer().analyze(df)
+    assert list(summary.columns) == ["period", "count"]
+    counts = dict(zip(summary["period"].astype(str), summary["count"], strict=True))
+    assert counts["2024-01"] == 2
+    assert counts["2024-03"] == 1
+
+
+def test_timeline_analyzer_falls_back_to_release_date_when_all_added_at_missing() -> (
+    None
+):
+    """When added_at is entirely missing, TimelineAnalyzer uses release_date.
+
+    Models the Spotify-curated-playlist case: the API returns added_at=null
+    for every track on official editorial playlists.
+    """
+    from spotify_project.analyzer import TimelineAnalyzer
+
+    df = _frame(
+        [
+            {"track_id": "1", "added_at": None, "release_date": "2020-05-01"},
+            {"track_id": "2", "added_at": None, "release_date": "2020-05-15"},
+            {"track_id": "3", "added_at": None, "release_date": "2021-02-01"},
+        ]
+    )
+    summary = TimelineAnalyzer().analyze(df)
+    counts = dict(zip(summary["period"].astype(str), summary["count"], strict=True))
+    assert counts["2020-05"] == 2
+    assert counts["2021-02"] == 1
+
+
+def test_timeline_analyzer_returns_empty_when_no_dates_at_all() -> None:
+    """TimelineAnalyzer returns an empty summary if both added_at and release_date are missing."""
+    from spotify_project.analyzer import TimelineAnalyzer
+
+    df = _frame(
+        [
+            {"track_id": "1", "added_at": None, "release_date": None},
+        ]
+    )
+    summary = TimelineAnalyzer().analyze(df)
+    assert summary.empty
+    assert list(summary.columns) == ["period", "count"]
