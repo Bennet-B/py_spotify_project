@@ -276,3 +276,11 @@ def test_popularity_analyzer_all_zero_popularity_collapses_into_first_bin() -> N
     summary = PopularityAnalyzer(bins=10).analyze(df)
     assert summary.iloc[0]["count"] == 5
     assert summary["count"].sum() == 5
+
+
+def test_popularity_analyzer_rejects_non_positive_bins() -> None:
+    """PopularityAnalyzer.__init__ rejects bins < 1."""
+    from spotify_project.analyzer import PopularityAnalyzer
+
+    with pytest.raises(ValueError, match="bins"):
+        PopularityAnalyzer(bins=0)

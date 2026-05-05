@@ -364,7 +364,7 @@ class PopularityAnalyzer(Analyzer):
             {
                 "bin_low": edges[:-1],
                 "bin_high": edges[1:],
-                "count": counts.astype(int),
+                "count": counts,
             }
         )
 
@@ -379,7 +379,7 @@ class PopularityAnalyzer(Analyzer):
             ax: Matplotlib Axes to draw on.
             summary: Output of ``analyze``.
         """
-        if summary.empty or summary["count"].sum() == 0:
+        if summary.empty:
             ax.text(0.5, 0.5, "No popularity data", ha="center", va="center")
             ax.set_title(self.title)
             return
