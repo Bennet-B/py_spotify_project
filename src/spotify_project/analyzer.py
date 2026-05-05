@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar
 
+import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -321,6 +322,76 @@ class ArtistAnalyzer(Analyzer):
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
         ax.set_title(self.title)
+
+
+class PopularityAnalyzer(Analyzer):
+    """Distribution of Spotify popularity scores (0-100) across the playlist.
+
+    Args:
+        bins: Number of equal-width bins covering [0, 100]; default 10.
+            Must be a positive integer.
+
+    Raises:
+        ValueError: If ``bins`` is not a positive integer.
+    """
+
+    title = "Popularity Distribution"
+
+    def __init__(self, bins: int = 10) -> None:
+        if bins < 1:
+            raise ValueError(f"bins must be a positive integer, got {bins}")
+        self.bins = bins
+
+    def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Bin track popularity into equal-width buckets across [0, 100].
+
+        Args:
+            df: Track-level DataFrame with a ``popularity`` column (0-100).
+
+        Returns:
+            DataFrame with columns ``bin_low``, ``bin_high``, ``count``.
+            The right edge of the last bin is inclusive (np.histogram
+            behavior); all other bins are right-open.
+        """
+        empty = pd.DataFrame({"bin_low": [], "bin_high": [], "count": []})
+        if df.empty or "popularity" not in df.columns:
+            return empty
+        values = pd.to_numeric(df["popularity"], errors="coerce").dropna()
+        if values.empty:
+            return empty
+        counts, edges = np.histogram(values, bins=self.bins, range=(0, 100))
+        return pd.DataFrame(
+            {
+                "bin_low": edges[:-1],
+                "bin_high": edges[1:],
+                "count": counts.astype(int),
+            }
+        )
+
+    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+        """Render a histogram of popularity counts plus a vertical mean line.
+
+        The mean is computed from the bin midpoints weighted by counts —
+        accurate enough for visual annotation, even if the underlying data
+        spread within bins is lost.
+
+        Args:
+            ax: Matplotlib Axes to draw on.
+            summary: Output of ``analyze``.
+        """
+        if summary.empty or summary["count"].sum() == 0:
+            ax.text(0.5, 0.5, "No popularity data", ha="center", va="center")
+            ax.set_title(self.title)
+            return
+        widths = summary["bin_high"] - summary["bin_low"]
+        ax.bar(summary["bin_low"], summary["count"], width=widths, align="edge")
+        midpoints = (summary["bin_low"] + summary["bin_high"]) / 2
+        weighted_mean = (midpoints * summary["count"]).sum() / summary["count"].sum()
+        ax.axvline(weighted_mean, linestyle="--", linewidth=1)
+        ax.set_xlabel("Popularity (0-100)")
+        ax.set_ylabel("Track count")
+        ax.set_xlim(0, 100)
+        ax.set_title(f"{self.title} (mean ≈ {weighted_mean:.1f})")
 
 
 class PlaylistAnalyzer:

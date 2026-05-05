@@ -229,3 +229,50 @@ def test_artist_analyzer_returns_empty_summary_for_empty_df() -> None:
         "track_count",
         "total_minutes",
     ]
+
+
+def test_popularity_analyzer_returns_bin_counts() -> None:
+    """PopularityAnalyzer bins track popularity 0-100 and reports counts per bin.
+
+    Default 10 bins → bins of width 10. The summary has columns
+    ``bin_low``, ``bin_high``, ``count``; bins are contiguous and cover [0, 100].
+    """
+    from spotify_project.analyzer import PopularityAnalyzer
+
+    df = _frame(
+        [
+            {"track_id": "1", "popularity": 5},
+            {"track_id": "2", "popularity": 12},
+            {"track_id": "3", "popularity": 18},
+            {"track_id": "4", "popularity": 95},
+        ]
+    )
+    summary = PopularityAnalyzer(bins=10).analyze(df)
+    assert list(summary.columns) == ["bin_low", "bin_high", "count"]
+    assert len(summary) == 10
+    first = summary.iloc[0]
+    assert first["bin_low"] == 0
+    assert first["bin_high"] == 10
+    assert first["count"] == 1  # popularity=5 lives in [0, 10)
+    second = summary.iloc[1]
+    assert second["count"] == 2  # popularity=12 and 18 in [10, 20)
+    assert summary.iloc[-1]["count"] == 1  # popularity=95 in [90, 100]
+
+
+def test_popularity_analyzer_handles_empty_df() -> None:
+    """PopularityAnalyzer returns an empty summary for an empty df."""
+    from spotify_project.analyzer import PopularityAnalyzer
+
+    summary = PopularityAnalyzer().analyze(_frame([]))
+    assert summary.empty
+    assert list(summary.columns) == ["bin_low", "bin_high", "count"]
+
+
+def test_popularity_analyzer_all_zero_popularity_collapses_into_first_bin() -> None:
+    """Tracks with popularity=0 (e.g. unreleased / unrated) all land in [0, 10)."""
+    from spotify_project.analyzer import PopularityAnalyzer
+
+    df = _frame([{"track_id": str(i), "popularity": 0} for i in range(5)])
+    summary = PopularityAnalyzer(bins=10).analyze(df)
+    assert summary.iloc[0]["count"] == 5
+    assert summary["count"].sum() == 5
