@@ -135,7 +135,13 @@ class GenreAnalyzer(Analyzer):
         """Count rows whose ``genres`` list is non-empty."""
         if df.empty or "genres" not in df.columns:
             return (0, len(df))
-        n_with = int((df["genres"].apply(len) > 0).sum())
+        n_with = int(
+            df["genres"]
+            .apply(  # pyright: ignore[reportUnknownArgumentType]
+                lambda g: bool(g) if isinstance(g, list) else False  # pyright: ignore[reportUnknownLambdaType,reportUnknownArgumentType]
+            )
+            .sum()
+        )
         return (n_with, len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -612,12 +618,11 @@ class TimelineAnalyzer(Analyzer):
         """Count rows with EITHER added_at OR release_date parseable."""
         if df.empty:
             return (0, 0)
-        added_at_raw: pd.Series[Any] = (
-            df["added_at"] if "added_at" in df.columns else pd.Series([], dtype=object)
+        added_at_ok: pd.Series[Any] = (
+            pd.to_datetime(df["added_at"], errors="coerce", utc=True).notna()
+            if "added_at" in df.columns
+            else pd.Series(False, index=df.index)
         )
-        added_at_ok: pd.Series[Any] = pd.to_datetime(
-            added_at_raw, errors="coerce", utc=True
-        ).notna()
         release_date_ok: pd.Series[Any] = (
             pd.to_datetime(
                 df["release_date"].astype(str), errors="coerce", utc=True

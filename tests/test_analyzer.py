@@ -519,3 +519,22 @@ def test_timeline_analyzer_reports_coverage_via_attrs() -> None:
     summary = TimelineAnalyzer().analyze(df)
     # Rows 1, 2, 4 contribute (have at least one usable date). Row 3 doesn't.
     assert summary.attrs["coverage"] == (3, 4)
+
+
+def test_timeline_analyzer_coverage_when_added_at_column_absent() -> None:
+    """TimelineAnalyzer.coverage must count release_date when added_at column doesn't exist.
+
+    Regression: empty fallback Series with empty index used to silently zero
+    out every row via index-alignment in the OR.
+    """
+    df = _frame(
+        [
+            {"track_id": "1", "release_date": "2020-01-01"},
+            {"track_id": "2", "release_date": "2020-05-01"},
+            {"track_id": "3", "release_date": None},
+        ]
+    )
+    summary = TimelineAnalyzer().analyze(df)
+    # 2 rows have parseable release_date; row 3 has None.
+    # Without the fix, this returns (0, 3) silently.
+    assert summary.attrs["coverage"] == (2, 3)
