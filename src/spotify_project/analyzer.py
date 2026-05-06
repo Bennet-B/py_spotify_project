@@ -530,7 +530,7 @@ class TimelineAnalyzer(Analyzer):
 
         # Strip timezone before to_period — pandas warns otherwise, and the
         # period (month / year / week) is coarse enough that tz is irrelevant.
-        periods: pd.Series[Any] = values.dt.tz_localize(None).dt.to_period(self.freq)  # pyright: ignore[reportUnknownMemberType]
+        periods: pd.Series[Any] = values.dt.tz_localize(None).dt.to_period(self.freq)
         result: pd.DataFrame = (
             periods.value_counts()
             .sort_index()
@@ -584,6 +584,16 @@ class PlaylistAnalyzer:
                 YearAnalyzer(),
             ]
         )
+        # Reject duplicate titles loudly: run_all keys results by title
+        # and plot_all renders one subplot per analyzer, so a duplicate
+        # would silently render the second analyzer's data under both
+        # subplots without raising. Better to fail at construction.
+        titles = [a.title for a in self.analyzers]
+        if len(set(titles)) != len(titles):
+            duplicates = sorted({t for t in titles if titles.count(t) > 1})
+            raise ValueError(
+                f"Analyzer titles must be unique; got duplicates: {duplicates}"
+            )
 
     @classmethod
     def from_playlist(

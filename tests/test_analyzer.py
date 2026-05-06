@@ -72,6 +72,20 @@ def test_analyzer_subclass_without_title_raises() -> None:
         type("_BadAnalyzer", (Analyzer,), {})
 
 
+def test_playlist_analyzer_rejects_duplicate_titles() -> None:
+    """PlaylistAnalyzer fails fast when two analyzers share the same title.
+
+    run_all keys results by title and plot_all renders one subplot per
+    analyzer; a duplicate title would silently render the second analyzer's
+    data under both subplots without raising.
+    """
+    with pytest.raises(ValueError, match="Analyzer titles must be unique"):
+        PlaylistAnalyzer(
+            df=pd.DataFrame(),
+            analyzers=[YearAnalyzer(bucket_size=1), YearAnalyzer(bucket_size=10)],
+        )
+
+
 def test_year_analyzer_groups_into_decade_buckets() -> None:
     """YearAnalyzer with bucket_size=10 groups years into decade ranges.
 
