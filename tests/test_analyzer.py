@@ -11,6 +11,7 @@ from spotify_project.analyzer import (
     Analyzer,
     GenreAnalyzer,
     PlaylistAnalyzer,
+    TimelineAnalyzer,
     YearAnalyzer,
 )
 
@@ -456,3 +457,65 @@ def test_analyzer_plot_accepts_color_kwarg() -> None:
         summary = analyzer.analyze(df)
         analyzer.plot(ax, summary, color="#ff0000")
         ax.clear()
+
+
+def test_genre_analyzer_reports_partial_coverage_via_attrs() -> None:
+    """GenreAnalyzer.analyze attaches (n_with_genres, n_total) to summary.attrs.
+
+    Tracks with empty genres list count toward n_total but not n_with_genres.
+    """
+    df = _frame(
+        [
+            {"track_id": "1", "genres": ["rock", "indie"]},
+            {"track_id": "2", "genres": ["pop"]},
+            {"track_id": "3", "genres": []},
+            {"track_id": "4", "genres": []},
+        ]
+    )
+    summary = GenreAnalyzer().analyze(df)
+    assert summary.attrs["coverage"] == (2, 4)
+
+
+def test_year_analyzer_reports_coverage_via_attrs() -> None:
+    """YearAnalyzer.analyze counts rows with parseable release_date."""
+    df = _frame(
+        [
+            {"track_id": "1", "release_date": "2020-01-01"},
+            {"track_id": "2", "release_date": "1979"},
+            {"track_id": "3", "release_date": None},
+            {"track_id": "4", "release_date": "not-a-date"},
+        ]
+    )
+    summary = YearAnalyzer().analyze(df)
+    # Rows 1, 2 parse cleanly. Row 3 is None. Row 4's first 4 chars "not-"
+    # fail pd.to_numeric → NaN → dropped. So 2 of 4 cleanly contribute years.
+    assert summary.attrs["coverage"] == (2, 4)
+
+
+def test_timeline_analyzer_reports_coverage_via_attrs() -> None:
+    """TimelineAnalyzer.analyze counts rows with usable date data.
+
+    A row contributes to coverage if EITHER added_at OR release_date is
+    parseable.
+    """
+    from datetime import datetime
+
+    df = _frame(
+        [
+            {
+                "track_id": "1",
+                "added_at": datetime(2024, 1, 1, tzinfo=UTC),
+                "release_date": "2020-01-01",
+            },
+            {"track_id": "2", "added_at": None, "release_date": "2020-05-01"},
+            {"track_id": "3", "added_at": None, "release_date": None},
+            {
+                "track_id": "4",
+                "added_at": datetime(2024, 2, 1, tzinfo=UTC),
+                "release_date": None,
+            },
+        ]
+    )
+    summary = TimelineAnalyzer().analyze(df)
+    # Rows 1, 2, 4 contribute (have at least one usable date). Row 3 doesn't.
+    assert summary.attrs["coverage"] == (3, 4)

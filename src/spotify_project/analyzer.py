@@ -87,6 +87,37 @@ class Analyzer(ABC):
     ) -> None:
         """Render ``summary`` onto ``ax``. No figure-level mutation."""
 
+    def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
+        """Return ``(n_with_usable_data, n_total)`` for this analyzer.
+
+        Default returns full coverage. Override in subclasses where data
+        can plausibly be missing (e.g. ``release_date`` for some albums,
+        ``genres`` for some artists).
+
+        Args:
+            df: The track-level DataFrame.
+
+        Returns:
+            ``(n_with_usable_data, n_total)``.
+        """
+        n = len(df)
+        return (n, n)
+
+    def _attach_coverage(self, summary: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+        """Stamp coverage onto ``summary.attrs["coverage"]`` and return.
+
+        Helper called by every concrete ``analyze()`` as its last step.
+
+        Args:
+            summary: The DataFrame that ``analyze`` is about to return.
+            df: The track-level DataFrame the analyzer worked from.
+
+        Returns:
+            ``summary``, with ``attrs["coverage"]`` set.
+        """
+        summary.attrs["coverage"] = self.coverage(df)
+        return summary
+
 
 class GenreAnalyzer(Analyzer):
     """Top genres by track count, with empty / sparse data handled.
@@ -100,6 +131,13 @@ class GenreAnalyzer(Analyzer):
     def __init__(self, top_n: int = 15) -> None:
         self.top_n = top_n
 
+    def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
+        """Count rows whose ``genres`` list is non-empty."""
+        if df.empty or "genres" not in df.columns:
+            return (0, len(df))
+        n_with = int((df["genres"].apply(len) > 0).sum())
+        return (n_with, len(df))
+
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Count genre frequency across all tracks and return the top N.
 
@@ -112,11 +150,11 @@ class GenreAnalyzer(Analyzer):
             descending by count, limited to ``top_n`` rows.
         """
         if df.empty:
-            return pd.DataFrame({"genre": [], "count": []})
+            return self._attach_coverage(pd.DataFrame({"genre": [], "count": []}), df)
         exploded = df.explode("genres").dropna(subset=["genres"])
         if exploded.empty:
-            return pd.DataFrame({"genre": [], "count": []})
-        return (
+            return self._attach_coverage(pd.DataFrame({"genre": [], "count": []}), df)
+        result = (
             exploded.groupby("genres", as_index=False)
             .size()
             .rename(columns={"genres": "genre", "size": "count"})
@@ -124,6 +162,7 @@ class GenreAnalyzer(Analyzer):
             .head(self.top_n)
             .reset_index(drop=True)
         )
+        return self._attach_coverage(result, df)
 
     def plot(
         self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
@@ -168,6 +207,14 @@ class YearAnalyzer(Analyzer):
             )
         self.bucket_size = bucket_size
 
+    def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
+        """Count rows with a parseable 4-digit release year."""
+        if df.empty or "release_date" not in df.columns:
+            return (0, len(df))
+        parsed = pd.to_numeric(df["release_date"].str.slice(0, 4), errors="coerce")
+        n_with = int(parsed.notna().sum())
+        return (n_with, len(df))
+
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Count tracks per release year (or per year-bucket).
 
@@ -184,22 +231,23 @@ class YearAnalyzer(Analyzer):
             ``count``, sorted ascending by year.
         """
         if df.empty or "release_date" not in df.columns:
-            return pd.DataFrame({"year": [], "count": []})
+            return self._attach_coverage(pd.DataFrame({"year": [], "count": []}), df)
         years = (
             pd.to_numeric(df["release_date"].str.slice(0, 4), errors="coerce")
             .dropna()
             .astype(int)
         )
         if years.empty:
-            return pd.DataFrame({"year": [], "count": []})
+            return self._attach_coverage(pd.DataFrame({"year": [], "count": []}), df)
         if self.bucket_size > 1:
             years = (years // self.bucket_size) * self.bucket_size
-        return (
+        result = (
             years.value_counts()
             .sort_index()
             .rename_axis("year")
             .reset_index(name="count")
         )
+        return self._attach_coverage(result, df)
 
     def plot(
         self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
@@ -303,12 +351,12 @@ class ArtistAnalyzer(Analyzer):
             }
         )
         if df.empty:
-            return empty
+            return self._attach_coverage(empty, df)
 
         if self.primary_only:
             required = {"primary_artist_id", "primary_artist_name", "duration_min"}
             if not required.issubset(df.columns):
-                return empty
+                return self._attach_coverage(empty, df)
             source = df[
                 ["primary_artist_id", "primary_artist_name", "duration_min"]
             ].rename(
@@ -320,7 +368,7 @@ class ArtistAnalyzer(Analyzer):
         else:
             required = {"artist_ids", "artist_names", "duration_min"}
             if not required.issubset(df.columns):
-                return empty
+                return self._attach_coverage(empty, df)
             # Explode artist_ids and artist_names in lock-step so each
             # exploded row holds the matching name. Pandas explode preserves
             # ordering within the row, so the parallelism is preserved.
@@ -328,7 +376,7 @@ class ArtistAnalyzer(Analyzer):
             exploded["pair"] = exploded.apply(_zip_pairs, axis=1)
             exploded = exploded.explode("pair").dropna(subset=["pair"])
             if exploded.empty:
-                return empty
+                return self._attach_coverage(empty, df)
             source = pd.DataFrame(
                 {
                     "artist_id": exploded["pair"].map(lambda p: p[0]),
@@ -339,7 +387,7 @@ class ArtistAnalyzer(Analyzer):
 
         source = source.dropna(subset=["artist_id"])
         if source.empty:
-            return empty
+            return self._attach_coverage(empty, df)
         grouped = (
             source.groupby(["artist_id", "artist_name"], as_index=False)
             .agg(
@@ -350,7 +398,7 @@ class ArtistAnalyzer(Analyzer):
             .head(self.top_n)
             .reset_index(drop=True)
         )
-        return grouped
+        return self._attach_coverage(grouped, df)
 
     def plot(
         self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
@@ -405,18 +453,19 @@ class PopularityAnalyzer(Analyzer):
         """
         empty = pd.DataFrame({"bin_low": [], "bin_high": [], "count": []})
         if df.empty or "popularity" not in df.columns:
-            return empty
+            return self._attach_coverage(empty, df)
         values = pd.to_numeric(df["popularity"], errors="coerce").dropna()
         if values.empty:
-            return empty
+            return self._attach_coverage(empty, df)
         counts, edges = np.histogram(values, bins=self.bins, range=(0, 100))
-        return pd.DataFrame(
+        result = pd.DataFrame(
             {
                 "bin_low": edges[:-1],
                 "bin_high": edges[1:],
                 "count": counts,
             }
         )
+        return self._attach_coverage(result, df)
 
     def plot(
         self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
@@ -484,10 +533,10 @@ class DurationAnalyzer(Analyzer):
             {"bin_low": [], "bin_high": [], "count": [], "minutes_in_bin": []}
         )
         if df.empty or "duration_min" not in df.columns:
-            return empty
+            return self._attach_coverage(empty, df)
         values = pd.to_numeric(df["duration_min"], errors="coerce").dropna()
         if values.empty:
-            return empty
+            return self._attach_coverage(empty, df)
         counts, edges = np.histogram(values, bins=self.bins)
         # Exact minutes per bin: digitize each value to its bin index, then
         # sum durations weighted into bincount. np.digitize uses 1-based
@@ -496,7 +545,7 @@ class DurationAnalyzer(Analyzer):
         # np.histogram's right-inclusive last bin).
         bin_idx = np.clip(np.digitize(values, edges) - 1, 0, self.bins - 1)
         minutes_in_bin = np.bincount(bin_idx, weights=values, minlength=self.bins)
-        return pd.DataFrame(
+        result = pd.DataFrame(
             {
                 "bin_low": edges[:-1],
                 "bin_high": edges[1:],
@@ -504,6 +553,7 @@ class DurationAnalyzer(Analyzer):
                 "minutes_in_bin": minutes_in_bin,
             }
         )
+        return self._attach_coverage(result, df)
 
     def plot(
         self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
@@ -558,6 +608,26 @@ class TimelineAnalyzer(Analyzer):
         # the chart correctly. Set in analyze(); read in plot().
         self._last_source: str = "added_at"
 
+    def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
+        """Count rows with EITHER added_at OR release_date parseable."""
+        if df.empty:
+            return (0, 0)
+        added_at_raw: pd.Series[Any] = (
+            df["added_at"] if "added_at" in df.columns else pd.Series([], dtype=object)
+        )
+        added_at_ok: pd.Series[Any] = pd.to_datetime(
+            added_at_raw, errors="coerce", utc=True
+        ).notna()
+        release_date_ok: pd.Series[Any] = (
+            pd.to_datetime(
+                df["release_date"].astype(str), errors="coerce", utc=True
+            ).notna()
+            if "release_date" in df.columns
+            else pd.Series(False, index=df.index)
+        )
+        n_with = int((added_at_ok | release_date_ok).sum())
+        return (n_with, len(df))
+
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Group track additions (or release dates) into time-period buckets.
 
@@ -572,7 +642,7 @@ class TimelineAnalyzer(Analyzer):
         empty = pd.DataFrame({"period": [], "count": []})
         if df.empty:
             self._last_source = "added_at"
-            return empty
+            return self._attach_coverage(empty, df)
 
         source_col = "added_at"
         raw: pd.Series[Any] = (
@@ -588,7 +658,7 @@ class TimelineAnalyzer(Analyzer):
 
         values = values.dropna()
         if values.empty:
-            return empty
+            return self._attach_coverage(empty, df)
 
         # Strip timezone before to_period — pandas warns otherwise, and the
         # period (month / year / week) is coarse enough that tz is irrelevant.
@@ -599,7 +669,7 @@ class TimelineAnalyzer(Analyzer):
             .rename_axis("period")
             .reset_index(name="count")
         )
-        return result
+        return self._attach_coverage(result, df)
 
     def plot(
         self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
