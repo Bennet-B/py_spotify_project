@@ -8,14 +8,50 @@ from __future__ import annotations
 # no per-call-site workaround for `**kwargs: Unknown` propagation.
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from .models import Playlist
+
+# A color accepted by Matplotlib: either a CSS hex/name string or an
+# RGB float-triple (0.0–1.0 per channel) as returned by seaborn palettes.
+_Color = str | tuple[float, float, float]
+
+
+def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
+    """Apply the Sprint C consistent style + coverage suffix to an Axes.
+
+    Reads ``summary.attrs["coverage"]`` (a ``(n_data, n_total)`` tuple
+    attached by ``Analyzer._attach_coverage``); when present and < 100%,
+    appends a coverage suffix to the title.
+
+    Args:
+        ax: The Matplotlib Axes to style.
+        base_title: The analyzer's effective title, before coverage suffix.
+        summary: The analyze() output. Used to read ``attrs["coverage"]``.
+    """
+    coverage = summary.attrs.get("coverage")
+    suffix = ""
+    if isinstance(coverage, tuple):
+        cov = cast(tuple[int, int], coverage)
+        if len(cov) == 2:
+            n_data, n_total = cov
+            if n_total > 0 and n_data < n_total:
+                pct = n_data / n_total
+                suffix = f" ({n_data}/{n_total} tracks, {pct:.0%} coverage)"
+    ax.set_title(base_title + suffix, fontsize=12, fontweight="bold")
+    ax.tick_params(colors="#666", labelsize=9)
+    xlabel = ax.get_xlabel()
+    ylabel = ax.get_ylabel()
+    if xlabel:
+        ax.set_xlabel(xlabel, fontsize=10, color="#666")
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=10, color="#666")
 
 
 class Analyzer(ABC):
@@ -33,6 +69,7 @@ class Analyzer(ABC):
     """
 
     title: ClassVar[str]
+    default_color: ClassVar[str] = "#1f77b4"
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -47,7 +84,9 @@ class Analyzer(ABC):
         """Return a summary DataFrame derived from the track-level df."""
 
     @abstractmethod
-    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+    def plot(
+        self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
+    ) -> None:
         """Render ``summary`` onto ``ax``. No figure-level mutation."""
 
 
@@ -88,21 +127,25 @@ class GenreAnalyzer(Analyzer):
             .reset_index(drop=True)
         )
 
-    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+    def plot(
+        self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
+    ) -> None:
         """Render a horizontal bar chart of genre counts.
 
         Args:
             ax: Matplotlib Axes to draw on.
             summary: Output of ``analyze``; columns ``genre`` and ``count``.
+            color: Bar color; defaults to the class's ``default_color``.
         """
+        c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No genre data", ha="center", va="center")
-            ax.set_title(self.title)
+            _style_axes(ax, self.title, summary)
             return
-        ax.barh(summary["genre"], summary["count"])
+        ax.barh(summary["genre"], summary["count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
-        ax.set_title(self.title)
+        _style_axes(ax, self.title, summary)
 
 
 class YearAnalyzer(Analyzer):
@@ -160,7 +203,9 @@ class YearAnalyzer(Analyzer):
             .reset_index(name="count")
         )
 
-    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+    def plot(
+        self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
+    ) -> None:
         """Render a vertical bar chart of track counts per year-bucket.
 
         Bar width is proportional to ``bucket_size`` so adjacent buckets
@@ -169,16 +214,19 @@ class YearAnalyzer(Analyzer):
         Args:
             ax: Matplotlib Axes to draw on.
             summary: Output of ``analyze``; columns ``year`` and ``count``.
+            color: Bar color; defaults to the class's ``default_color``.
         """
+        c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No year data", ha="center", va="center")
-            ax.set_title(self.title)
+            _style_axes(ax, self.title, summary)
             return
         ax.bar(
             summary["year"],
             summary["count"],
             width=self.bucket_size * 0.9,
             align="edge" if self.bucket_size > 1 else "center",
+            color=c,
         )
         xlabel = (
             "Year"
@@ -187,7 +235,7 @@ class YearAnalyzer(Analyzer):
         )
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Track count")
-        ax.set_title(self.title)
+        _style_axes(ax, self.title, summary)
 
 
 def _zip_pairs(row: pd.Series[Any]) -> list[tuple[str, str]]:
@@ -306,22 +354,26 @@ class ArtistAnalyzer(Analyzer):
         )
         return grouped
 
-    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+    def plot(
+        self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
+    ) -> None:
         """Render a horizontal bar chart of artists by track count.
 
         Args:
             ax: Matplotlib Axes to draw on.
             summary: Output of ``analyze``; must include ``artist_name``
                 and ``track_count`` columns.
+            color: Bar color; defaults to the class's ``default_color``.
         """
+        c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No artist data", ha="center", va="center")
-            ax.set_title(self.title)
+            _style_axes(ax, self.title, summary)
             return
-        ax.barh(summary["artist_name"], summary["track_count"])
+        ax.barh(summary["artist_name"], summary["track_count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
-        ax.set_title(self.title)
+        _style_axes(ax, self.title, summary)
 
 
 class PopularityAnalyzer(Analyzer):
@@ -368,7 +420,9 @@ class PopularityAnalyzer(Analyzer):
             }
         )
 
-    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+    def plot(
+        self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
+    ) -> None:
         """Render a histogram of popularity counts plus a vertical mean line.
 
         The mean is computed from the bin midpoints weighted by counts —
@@ -378,20 +432,24 @@ class PopularityAnalyzer(Analyzer):
         Args:
             ax: Matplotlib Axes to draw on.
             summary: Output of ``analyze``.
+            color: Bar color; defaults to the class's ``default_color``.
         """
+        c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No popularity data", ha="center", va="center")
-            ax.set_title(self.title)
+            _style_axes(ax, self.title, summary)
             return
         widths = summary["bin_high"] - summary["bin_low"]
-        ax.bar(summary["bin_low"], summary["count"], width=widths, align="edge")
+        ax.bar(
+            summary["bin_low"], summary["count"], width=widths, align="edge", color=c
+        )
         midpoints = (summary["bin_low"] + summary["bin_high"]) / 2
         weighted_mean = (midpoints * summary["count"]).sum() / summary["count"].sum()
-        ax.axvline(weighted_mean, linestyle="--", linewidth=1)
+        ax.axvline(weighted_mean, linestyle="--", linewidth=1, color="#444")
         ax.set_xlabel("Popularity (0-100)")
         ax.set_ylabel("Track count")
         ax.set_xlim(0, 100)
-        ax.set_title(f"{self.title} (mean ≈ {weighted_mean:.1f})")
+        _style_axes(ax, f"{self.title} (mean ≈ {weighted_mean:.1f})", summary)
 
 
 class DurationAnalyzer(Analyzer):
@@ -449,25 +507,31 @@ class DurationAnalyzer(Analyzer):
             }
         )
 
-    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+    def plot(
+        self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
+    ) -> None:
         """Render a duration histogram with total-runtime annotation in the title.
 
         Args:
             ax: Matplotlib Axes to draw on.
             summary: Output of ``analyze``.
+            color: Bar color; defaults to the class's ``default_color``.
         """
+        c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No duration data", ha="center", va="center")
-            ax.set_title(self.title)
+            _style_axes(ax, self.title, summary)
             return
         widths = summary["bin_high"] - summary["bin_low"]
-        ax.bar(summary["bin_low"], summary["count"], width=widths, align="edge")
+        ax.bar(
+            summary["bin_low"], summary["count"], width=widths, align="edge", color=c
+        )
         total_min = round(summary["minutes_in_bin"].sum())
         hours = total_min // 60
         minutes = total_min % 60
         ax.set_xlabel("Duration (minutes)")
         ax.set_ylabel("Track count")
-        ax.set_title(f"{self.title} (total runtime: {hours}h {minutes}m)")
+        _style_axes(ax, f"{self.title} (total runtime: {hours}h {minutes}m)", summary)
 
 
 class TimelineAnalyzer(Analyzer):
@@ -539,27 +603,30 @@ class TimelineAnalyzer(Analyzer):
         )
         return result
 
-    def plot(self, ax: Axes, summary: pd.DataFrame) -> None:
+    def plot(
+        self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
+    ) -> None:
         """Render an area-style line chart of track additions over time.
 
         Args:
             ax: Matplotlib Axes to draw on.
             summary: Output of ``analyze``; columns ``period`` and ``count``.
+            color: Line/fill color; defaults to the class's ``default_color``.
         """
+        c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No timeline data", ha="center", va="center")
-            ax.set_title(self.title)
+            _style_axes(ax, self.title, summary)
             return
-        # Plot against period.start_time so matplotlib gets real datetimes.
         x: pd.Series[Any] = summary["period"].apply(lambda p: p.start_time)  # pyright: ignore[reportUnknownVariableType,reportUnknownArgumentType,reportUnknownLambdaType,reportUnknownMemberType]
-        ax.fill_between(x, summary["count"], step="mid", alpha=0.4)
-        ax.plot(x, summary["count"], marker="o")
+        ax.fill_between(x, summary["count"], step="mid", alpha=0.4, color=c)
+        ax.plot(x, summary["count"], marker="o", color=c)
         ax.set_xlabel("Time")
         ax.set_ylabel("Tracks added")
         source_label = (
             "added_at" if self._last_source == "added_at" else "release_date (fallback)"
         )
-        ax.set_title(f"{self.title} (source: {source_label})")
+        _style_axes(ax, f"{self.title} (source: {source_label})", summary)
 
 
 class PlaylistAnalyzer:
@@ -656,9 +723,8 @@ class PlaylistAnalyzer:
     def plot_all(self, fig: Figure) -> None:
         """Lay out one subplot per analyzer in a vertical stack on ``fig``.
 
-        Reuses the result of ``run_all`` so each analyzer's ``analyze``
-        runs exactly once per call (instead of twice if the caller also
-        invoked ``run_all`` separately).
+        Each panel uses one color from seaborn's ``"colorblind"`` palette,
+        assigned in registration order.
 
         Args:
             fig: Matplotlib Figure to subdivide with subplots.
@@ -669,8 +735,9 @@ class PlaylistAnalyzer:
         summaries = self.run_all()
         axes = fig.subplots(n, 1)
         axes_list = [axes] if n == 1 else list(axes)
-        for ax, analyzer in zip(axes_list, self.analyzers, strict=False):
-            analyzer.plot(ax, summaries[analyzer.title])
+        palette = sns.color_palette("colorblind", n_colors=n)
+        for ax, analyzer, color in zip(axes_list, self.analyzers, palette, strict=True):
+            analyzer.plot(ax, summaries[analyzer.title], color=color)
         fig.tight_layout()
 
     def to_parquet(self, path: Path) -> None:

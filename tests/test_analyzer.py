@@ -406,3 +406,53 @@ def test_timeline_analyzer_returns_empty_when_no_dates_at_all() -> None:
     summary = TimelineAnalyzer().analyze(df)
     assert summary.empty
     assert list(summary.columns) == ["period", "count"]
+
+
+def test_analyzer_plot_accepts_color_kwarg() -> None:
+    """Each Analyzer subclass's plot() accepts a color= kwarg without raising.
+
+    Pins the contract that PlaylistAnalyzer.plot_all relies on for palette
+    threading. Doesn't assert color was actually used (matplotlib internals);
+    just that the kwarg is supported.
+    """
+    from matplotlib.figure import Figure
+
+    from spotify_project.analyzer import (
+        ArtistAnalyzer,
+        DurationAnalyzer,
+        GenreAnalyzer,
+        PopularityAnalyzer,
+        TimelineAnalyzer,
+        YearAnalyzer,
+    )
+
+    fig = Figure()
+    ax = fig.subplots()
+    df = _frame(
+        [
+            {
+                "track_id": "t1",
+                "genres": ["rock"],
+                "release_date": "2020-01-01",
+                "primary_artist_id": "a1",
+                "primary_artist_name": "Alice",
+                "artist_ids": ["a1"],
+                "artist_names": ["Alice"],
+                "duration_min": 3.0,
+                "popularity": 50,
+                "added_at": pd.Timestamp("2024-01-01", tz="UTC"),
+            }
+        ]
+    )
+    for cls in (
+        GenreAnalyzer,
+        YearAnalyzer,
+        ArtistAnalyzer,
+        PopularityAnalyzer,
+        DurationAnalyzer,
+        TimelineAnalyzer,
+    ):
+        analyzer = cls()
+        summary = analyzer.analyze(df)
+        analyzer.plot(ax, summary, color="#ff0000")
+        ax.clear()
