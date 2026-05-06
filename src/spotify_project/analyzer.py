@@ -528,7 +528,9 @@ class TimelineAnalyzer(Analyzer):
         if values.empty:
             return empty
 
-        periods: pd.Series[Any] = values.dt.to_period(self.freq)  # pyright: ignore[reportUnknownMemberType]
+        # Strip timezone before to_period — pandas warns otherwise, and the
+        # period (month / year / week) is coarse enough that tz is irrelevant.
+        periods: pd.Series[Any] = values.dt.tz_localize(None).dt.to_period(self.freq)  # pyright: ignore[reportUnknownMemberType]
         result: pd.DataFrame = (
             periods.value_counts()
             .sort_index()

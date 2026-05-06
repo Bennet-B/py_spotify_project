@@ -306,7 +306,7 @@ def test_duration_analyzer_returns_bins_with_exact_minutes_per_bin() -> None:
     summary = DurationAnalyzer(bins=4).analyze(df)
     assert list(summary.columns) == ["bin_low", "bin_high", "count", "minutes_in_bin"]
     assert summary["count"].sum() == 4
-    assert summary["minutes_in_bin"].sum() == pytest.approx(14.0)
+    assert summary["minutes_in_bin"].sum() == pytest.approx(14.0)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_duration_analyzer_handles_single_track() -> None:
@@ -316,7 +316,7 @@ def test_duration_analyzer_handles_single_track() -> None:
     df = _frame([{"track_id": "1", "duration_min": 3.5}])
     summary = DurationAnalyzer(bins=10).analyze(df)
     assert summary["count"].sum() == 1
-    assert summary["minutes_in_bin"].sum() == pytest.approx(3.5)
+    assert summary["minutes_in_bin"].sum() == pytest.approx(3.5)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_duration_analyzer_handles_empty_df() -> None:
