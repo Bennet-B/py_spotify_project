@@ -8,7 +8,7 @@ from __future__ import annotations
 # no per-call-site workaround for `**kwargs: Unknown` propagation.
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
@@ -35,15 +35,13 @@ def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
         base_title: The analyzer's effective title, before coverage suffix.
         summary: The analyze() output. Used to read ``attrs["coverage"]``.
     """
-    coverage = summary.attrs.get("coverage")
     suffix = ""
-    if isinstance(coverage, tuple):
-        cov = cast(tuple[int, int], coverage)
-        if len(cov) == 2:
-            n_data, n_total = cov
-            if n_total > 0 and n_data < n_total:
-                pct = n_data / n_total
-                suffix = f" ({n_data}/{n_total} tracks, {pct:.0%} coverage)"
+    match summary.attrs.get("coverage"):
+        case (int(n_data), int(n_total)) if n_total > 0 and n_data < n_total:
+            pct = n_data / n_total
+            suffix = f" ({n_data}/{n_total} tracks, {pct:.0%} coverage)"
+        case _:
+            pass
     ax.set_title(base_title + suffix, fontsize=12, fontweight="bold")
     ax.tick_params(colors="#666", labelsize=9)
     xlabel = ax.get_xlabel()
@@ -69,7 +67,7 @@ class Analyzer(ABC):
     """
 
     title: ClassVar[str]
-    default_color: ClassVar[str] = "#1f77b4"
+    default_color: ClassVar[_Color] = "#1f77b4"
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
