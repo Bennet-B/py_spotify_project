@@ -372,9 +372,7 @@ def test_timeline_analyzer_groups_added_at_by_month_by_default() -> None:
     assert counts["2024-03"] == 1
 
 
-def test_timeline_analyzer_falls_back_to_release_date_when_all_added_at_missing() -> (
-    None
-):
+def test_timeline_analyzer_falls_back_to_release_date_when_all_added_at_missing() -> None:
     """When added_at is entirely missing, TimelineAnalyzer uses release_date.
 
     Models the Spotify-curated-playlist case: the API returns added_at=null
@@ -605,16 +603,12 @@ def test_timeline_analyzer_summary_includes_source_column() -> None:
     onto every row of the summary, eliminating the need for instance state."""
     from datetime import datetime
 
-    df_added_at = _frame(
-        [{"track_id": "1", "added_at": datetime(2024, 1, 1, tzinfo=UTC)}]
-    )
+    df_added_at = _frame([{"track_id": "1", "added_at": datetime(2024, 1, 1, tzinfo=UTC)}])
     summary_added = TimelineAnalyzer().analyze(df_added_at)
     assert "source" in summary_added.columns
     assert (summary_added["source"] == "added_at").all()
 
-    df_release = _frame(
-        [{"track_id": "1", "added_at": None, "release_date": "2020-05-01"}]
-    )
+    df_release = _frame([{"track_id": "1", "added_at": None, "release_date": "2020-05-01"}])
     summary_release = TimelineAnalyzer().analyze(df_release)
     assert (summary_release["source"] == "release_date").all()
 

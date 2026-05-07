@@ -116,6 +116,7 @@ class Analyzer(ABC):
         summary.attrs["coverage"] = self.coverage(df)
         return summary
 
+
 class GenreAnalyzer(Analyzer):
     """Top genres by track count, with empty / sparse data handled.
 
@@ -133,7 +134,7 @@ class GenreAnalyzer(Analyzer):
         """Count rows whose ``genres`` list is non-empty."""
         if df.empty or "genres" not in df.columns:
             return (0, len(df))
-        n_with = int(df["genres"].apply(lambda g: bool(g) if isinstance(g, list) else False).sum()) # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+        n_with = int(df["genres"].apply(lambda g: bool(g) if isinstance(g, list) else False).sum())  # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
         return (n_with, len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -239,21 +240,12 @@ class YearAnalyzer(Analyzer):
         """
         if df.empty or "release_date" not in df.columns:
             return self._attach_coverage(pd.DataFrame({"year": [], "count": []}), df)
-        years = (
-            pd.to_numeric(df["release_date"].str.slice(0, 4), errors="coerce")
-            .dropna()
-            .astype(int)
-        )
+        years = pd.to_numeric(df["release_date"].str.slice(0, 4), errors="coerce").dropna().astype(int)
         if years.empty:
             return self._attach_coverage(pd.DataFrame({"year": [], "count": []}), df)
         if self.bucket_size > 1:
             years = (years // self.bucket_size) * self.bucket_size
-        result = (
-            years.value_counts()
-            .sort_index()
-            .rename_axis("year")
-            .reset_index(name="count")
-        )
+        result = years.value_counts().sort_index().rename_axis("year").reset_index(name="count")
         return self._attach_coverage(result, df)
 
     def plot(self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None) -> None:
@@ -278,11 +270,7 @@ class YearAnalyzer(Analyzer):
             align="edge" if self.bucket_size > 1 else "center",
             color=c,
         )
-        xlabel = (
-            "Year"
-            if self.bucket_size == 1
-            else f"Year ({self.bucket_size}-year buckets)"
-        )
+        xlabel = "Year" if self.bucket_size == 1 else f"Year ({self.bucket_size}-year buckets)"
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Track count")
         _style_axes(ax, self.effective_title, summary)
@@ -349,7 +337,7 @@ class ArtistAnalyzer(Analyzer):
             # Explode artist_ids and artist_names in lock-step so each exploded row holds the matching name.
             # Pandas explode preserves ordering within the row, so the parallelism is preserved.
             exploded = df[["artist_ids", "artist_names", "duration_min"]].copy()
-            exploded["pair"] = exploded.apply(lambda row: list(zip(row["artist_ids"], row["artist_names"], strict=True)), axis=1) # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+            exploded["pair"] = exploded.apply(lambda row: list(zip(row["artist_ids"], row["artist_names"], strict=True)), axis=1)  # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
             exploded = exploded.explode("pair").dropna(subset=["pair"])
             if exploded.empty:
                 return self._attach_coverage(empty, df)
@@ -561,11 +549,7 @@ class TimelineAnalyzer(Analyzer):
         """
         if df.empty:
             return (0, len(df))
-        added_at_parsed: pd.Series[Any] = (
-            pd.to_datetime(df["added_at"], errors="coerce", utc=True)
-            if "added_at" in df.columns
-            else pd.Series(pd.NaT, index=df.index)
-        )
+        added_at_parsed: pd.Series[Any] = pd.to_datetime(df["added_at"], errors="coerce", utc=True) if "added_at" in df.columns else pd.Series(pd.NaT, index=df.index)
         if not added_at_parsed.isna().all():
             n_with = int(added_at_parsed.notna().sum())
         elif "release_date" in df.columns:
@@ -594,7 +578,7 @@ class TimelineAnalyzer(Analyzer):
             return self._attach_coverage(empty, df)
 
         source_col = "added_at"
-        raw: pd.Series[Any] = (df["added_at"] if "added_at" in df.columns else pd.Series([], dtype=object))
+        raw: pd.Series[Any] = df["added_at"] if "added_at" in df.columns else pd.Series([], dtype=object)
         values: pd.Series[Any] = pd.to_datetime(raw, errors="coerce", utc=True)
         if values.isna().all() and "release_date" in df.columns:
             source_col = "release_date"
@@ -611,12 +595,7 @@ class TimelineAnalyzer(Analyzer):
             return self._attach_coverage(empty, df)
         # Strip timezone before to_period — pandas warns otherwise, and the period (month / year / week) is coarse enough that tz is irrelevant.
         periods: pd.Series[Any] = values.dt.tz_localize(None).dt.to_period(self.freq)
-        result: pd.DataFrame = (
-            periods.value_counts()
-            .sort_index()
-            .rename_axis("period")
-            .reset_index(name="count")
-        )
+        result: pd.DataFrame = periods.value_counts().sort_index().rename_axis("period").reset_index(name="count")
         result["source"] = source_col
         n_data, n_total = self.coverage(df)
         if n_total > 0 and n_data / n_total < 0.70:
@@ -624,7 +603,9 @@ class TimelineAnalyzer(Analyzer):
                 "TimelineAnalyzer: only %d/%d tracks (%.0f%%) have usable timestamps; "
                 "timeline may appear sparse — year-only release_dates are excluded to avoid "
                 "fabricated January spikes (YearAnalyzer covers year-level breakdown)",
-                n_data, n_total, 100 * n_data / n_total,
+                n_data,
+                n_total,
+                100 * n_data / n_total,
             )
         result.attrs["coverage"] = (n_data, n_total)
         return result
@@ -642,13 +623,13 @@ class TimelineAnalyzer(Analyzer):
             ax.text(0.5, 0.5, "No timeline data", ha="center", va="center")
             _style_axes(ax, self.effective_title, summary)
             return
-        x: pd.Series[Any] = summary["period"].apply(lambda p: p.start_time) # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+        x: pd.Series[Any] = summary["period"].apply(lambda p: p.start_time)  # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
         ax.fill_between(x, summary["count"], step="mid", alpha=0.4, color=c)
         ax.plot(x, summary["count"], marker="o", color=c)
         ax.set_xlabel("Time")
         ax.set_ylabel("Tracks added")
         source_col = str(summary["source"].iloc[0])
-        source_label = ("added_at" if source_col == "added_at" else "release_date (fallback)")
+        source_label = "added_at" if source_col == "added_at" else "release_date (fallback)"
         _style_axes(ax, f"{self.effective_title} (source: {source_label})", summary)
 
 
