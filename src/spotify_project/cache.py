@@ -23,20 +23,25 @@ class FileCache:
         self.ttl_days = ttl_days
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def get(self, key: str) -> dict[str, Any] | None:
+    def get(self, key: str, *, ttl_days: float | None = None) -> dict[str, Any] | None:
         """Return the cached JSON for ``key`` if present and within TTL.
 
         Args:
             key: Cache key (e.g. ``"playlist/<id>"``).
+            ttl_days: Per-call TTL override. When ``None`` (default), uses
+                the instance-level ``self.ttl_days``. Long-lived data like
+                Spotify artist genres can opt into a longer TTL without
+                requiring a separate cache instance.
 
         Returns:
             The deserialized JSON, or ``None`` if missing / stale.
         """
+        effective_ttl = ttl_days if ttl_days is not None else self.ttl_days
         path = self._path_for(key)
         if not path.exists():
             return None
         age_seconds = time.time() - path.stat().st_mtime
-        if age_seconds > self.ttl_days * 86_400:
+        if age_seconds > effective_ttl * 86_400:
             return None
         return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 

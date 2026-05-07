@@ -8,6 +8,7 @@ from __future__ import annotations
 # only surfaces at the method-type level, not in our downstream usage.
 import logging
 import os
+import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, ClassVar, cast
@@ -49,6 +50,18 @@ class SpotifyClient:
     )
 
     DEFAULT_TOKEN_CACHE: ClassVar[str] = ".cache/spotify_token"
+
+    # Artist genres / popularity rarely change; long TTL avoids re-paying
+    # the per-artist API cost on every notebook re-run. Spotify's Feb 2026
+    # batch-artists deprecation made these calls expensive (one round-trip
+    # per artist), and a 3000-track library can easily reference 2000+
+    # unique artists.
+    ARTIST_CACHE_TTL_DAYS: ClassVar[float] = 365.0
+
+    # Inter-call sleep applied AFTER each uncached artist fetch. ~4 req/sec
+    # stays well under Spotify's rolling-window rate limit. Cache hits skip
+    # the sleep, so a warm cache pays no overhead.
+    ARTIST_FETCH_DELAY_SECONDS: ClassVar[float] = 0.25
 
     def __init__(self, sp: spotipy.Spotify, cache: FileCache) -> None:
         self.sp = sp
@@ -279,11 +292,16 @@ class SpotifyClient:
         out: list[Artist] = []
         for artist_id in ids:
             cache_key = f"artist/{artist_id}"
-            cached = None if force_refresh else self.cache.get(cache_key)
+            cached = (
+                None
+                if force_refresh
+                else self.cache.get(cache_key, ttl_days=self.ARTIST_CACHE_TTL_DAYS)
+            )
             data: dict[str, Any]
             if cached is None:
                 data = cast(dict[str, Any], self.sp.artist(artist_id))
                 self.cache.put(cache_key, data)
+                time.sleep(self.ARTIST_FETCH_DELAY_SECONDS)
             else:
                 data = cached
             out.append(Artist.from_api(data))

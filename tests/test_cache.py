@@ -31,3 +31,19 @@ def test_unsafe_key_with_traversal_raises(tmp_path: Path) -> None:
     cache = FileCache(root=tmp_path)
     with pytest.raises(ValueError, match="Unsafe cache key"):
         cache.put("../escape", {"x": 1})
+
+
+def test_get_with_ttl_override_overrides_instance_default(tmp_path: Path) -> None:
+    """FileCache.get accepts a per-call ttl_days override.
+
+    A value past the instance's default TTL but within the override
+    returns; without the override (instance default) it returns None.
+    """
+    cache = FileCache(root=tmp_path, ttl_days=1.0)
+    cache.put("artist/a1", {"name": "Alice"})
+    cache_file = tmp_path / "artist" / "a1.json"
+    five_days_ago = time.time() - 5 * 86_400
+    os.utime(cache_file, (five_days_ago, five_days_ago))
+
+    assert cache.get("artist/a1") is None
+    assert cache.get("artist/a1", ttl_days=10.0) == {"name": "Alice"}

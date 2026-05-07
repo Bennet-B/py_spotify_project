@@ -137,3 +137,53 @@ def test_liked_songs_paginates_and_synthesizes_pseudo_playlist(tmp_path: Path) -
     assert first is not None
     assert first.name == "Artist 1"
     assert "rock" in first.genres
+
+
+def test_artists_uses_long_ttl_for_cached_entries(tmp_path: Path) -> None:
+    """artists() reads cached entries past the default 7-day TTL.
+
+    Pins the contract that ARTIST_CACHE_TTL_DAYS is plumbed into
+    cache.get's ttl_days override. Without the long TTL, this test would
+    re-fetch the stale entry — and the mock has no .artist method, so
+    the fetch would AttributeError.
+    """
+    import os
+    import time
+
+    cache = FileCache(root=tmp_path)  # default 7-day TTL
+    cache.put(
+        "artist/a1",
+        {"id": "a1", "name": "Alice", "genres": ["rock"], "popularity": 50},
+    )
+    cache_file = tmp_path / "artist" / "a1.json"
+    thirty_days_ago = time.time() - 30 * 86_400
+    os.utime(cache_file, (thirty_days_ago, thirty_days_ago))
+
+    fake_sp = MagicMock(spec=[])  # spec=[] means ANY attribute access raises
+    client = SpotifyClient(sp=fake_sp, cache=cache)
+    artists = client.artists(["a1"])
+    assert len(artists) == 1
+    assert artists[0].name == "Alice"
+
+
+def test_artists_throttles_between_uncached_fetches(tmp_path: Path) -> None:
+    """artists() sleeps after each real API call (cache hits skip the sleep).
+
+    Pins the throttle behavior: a 2-artist fetch with a cold cache should
+    invoke time.sleep twice, with the value from ARTIST_FETCH_DELAY_SECONDS.
+    """
+    from unittest.mock import patch
+
+    cache = FileCache(root=tmp_path)
+    fake_sp = MagicMock()
+    fake_sp.artist.side_effect = [
+        {"id": "a1", "name": "Alice", "genres": ["rock"], "popularity": 50},
+        {"id": "a2", "name": "Bob", "genres": ["pop"], "popularity": 40},
+    ]
+
+    client = SpotifyClient(sp=fake_sp, cache=cache)
+    with patch("spotify_project.client.time.sleep") as mock_sleep:
+        client.artists(["a1", "a2"])
+    assert mock_sleep.call_count == 2
+    for call in mock_sleep.call_args_list:
+        assert call.args[0] == SpotifyClient.ARTIST_FETCH_DELAY_SECONDS
