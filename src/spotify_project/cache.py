@@ -10,7 +10,7 @@ class FileCache:
     """File-based cache for Spotify API responses.
 
     Stores each value as a single JSON file under ``root/<key>.json``.
-    A cached entry is fresh iff the file's mtime is within ``ttl_days``.
+    A cached entry is fresh if the file's mtime is within ``ttl_days``.
     Slashes in keys create subdirectories; keep keys filesystem-safe.
 
     Attributes:
@@ -28,10 +28,8 @@ class FileCache:
 
         Args:
             key: Cache key (e.g. ``"playlist/<id>"``).
-            ttl_days: Per-call TTL override. When ``None`` (default), uses
-                the instance-level ``self.ttl_days``. Long-lived data like
-                Spotify artist genres can opt into a longer TTL without
-                requiring a separate cache instance.
+            ttl_days: Per-call TTL override. When ``None`` (default), uses the instance-level ``self.ttl_days``. 
+                Long-lived data can opt into a longer TTL without requiring a separate cache instance.
 
         Returns:
             The deserialized JSON, or ``None`` if missing / stale.
@@ -71,8 +69,7 @@ class FileCache:
             The full filesystem path under ``self.root``.
 
         Raises:
-            ValueError: If ``key`` contains ``..`` segments or otherwise
-                resolves outside the cache root.
+            ValueError: If ``key`` contains ``..`` segments or otherwise resolves outside the cache root.
         """
         if ".." in key.split("/"):
             raise ValueError(f"Unsafe cache key: {key!r}")

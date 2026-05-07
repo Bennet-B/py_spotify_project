@@ -29,9 +29,7 @@ class Artist:
 
     def __post_init__(self) -> None:
         if not 0 <= self.popularity <= 100:
-            raise ValueError(
-                f"Artist popularity must be in [0, 100], got {self.popularity}"
-            )
+            raise ValueError(f"Artist popularity must be in [0, 100], got {self.popularity}")
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Artist:
@@ -64,8 +62,7 @@ class Track:
         duration_ms: Length in milliseconds.
         popularity: 0-100 score.
         explicit: Whether the track has explicit content.
-        added_at: When the track was added to the playlist.
-            None for Spotify-curated playlists.
+        added_at: When the track was added to the playlist. None for Spotify-curated playlists.
         is_local: True for user-uploaded local files.
 
     Raises:
@@ -85,9 +82,7 @@ class Track:
 
     def __post_init__(self) -> None:
         if not 0 <= self.popularity <= 100:
-            raise ValueError(
-                f"Track popularity must be in [0, 100], got {self.popularity}"
-            )
+            raise ValueError(f"Track popularity must be in [0, 100], got {self.popularity}")
         if self.duration_ms < 0:
             raise ValueError(f"Track duration_ms must be >= 0, got {self.duration_ms}")
 
@@ -97,28 +92,15 @@ class Track:
         return self.artists[0] if self.artists else None
 
     @classmethod
-    def from_api(
-        cls,
-        item: dict[str, Any],
-        artist_by_id: dict[str, Artist],
-    ) -> Track:
+    def from_api(cls, item: dict[str, Any], artist_by_id: dict[str, Artist]) -> Track:
         """Parse a playlist-item dict into a Track.
 
         Args:
-            item: A spotipy playlist-item dict (with keys ``track``,
-                ``added_at``, ``is_local``).
-            artist_by_id: Lookup of fully-fetched Artist objects, populated
-                by ``SpotifyClient.playlist`` after the batch artist call.
+            item: A spotipy playlist-item dict (with keys ``track``, ``added_at``, ``is_local``).
+            artist_by_id: Lookup of fully-fetched Artist objects, populated by ``SpotifyClient.playlist``.
 
         Returns:
-            The constructed Track. Tracks whose ``item.type`` is not
-            ``"track"`` (e.g. podcast episodes) should be filtered out by
-            the caller before this is called.
-
-        Note:
-            As of the Spotify Feb 2026 migration, the inner key is
-            ``"item"``, not the legacy ``"track"``. See the migration
-            guide referenced in CLAUDE.md.
+            The constructed Track. Tracks whose ``item.type`` is not ``"track"`` (e.g. podcast episodes) should be filtered out by the caller before this is called.
         """
         track_data = item["item"]
         is_local = item.get("is_local", False)
@@ -128,9 +110,7 @@ class Track:
             if not aid:
                 continue
             if aid not in artist_by_id:
-                _log.warning(
-                    "artist %s not in lookup; track may lose primary_artist", aid
-                )
+                _log.warning("artist %s not in lookup; track may lose primary_artist", aid)
                 continue
             resolved.append(artist_by_id[aid])
         added_at_raw = item.get("added_at")
@@ -172,11 +152,7 @@ class Playlist:
     tracks: tuple[Track, ...]
 
     @classmethod
-    def from_api(
-        cls,
-        data: dict[str, Any],
-        tracks: list[Track],
-    ) -> Playlist:
+    def from_api(cls, data: dict[str, Any], tracks: list[Track]) -> Playlist:
         """Parse a Spotify playlist API response.
 
         Args:
