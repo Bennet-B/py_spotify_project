@@ -29,7 +29,7 @@ def _track_item(idx: int, artist_id: str = "a1") -> dict[str, Any]:
 
 
 def test_playlist_paginates_and_enriches_artists(tmp_path: Path) -> None:
-    """Client.playlist concatenates pages and embeds full Artist data per Track."""
+    """Client.fetch_playlist concatenates pages and embeds full Artist data per Track."""
     cache = FileCache(root=tmp_path)
     fake_sp = MagicMock()
 
@@ -56,7 +56,7 @@ def test_playlist_paginates_and_enriches_artists(tmp_path: Path) -> None:
     }
 
     client = SpotifyClient(sp=fake_sp, cache=cache)
-    playlist = client.playlist("pl1")
+    playlist = client.fetch_playlist("pl1")
 
     assert len(playlist.tracks) == 150
     first = playlist.tracks[0].primary_artist
@@ -95,7 +95,7 @@ def _saved_track_item(idx: int, artist_id: str = "a1") -> dict[str, Any]:
 
 
 def test_liked_songs_paginates_and_synthesizes_pseudo_playlist(tmp_path: Path) -> None:
-    """SpotifyClient.liked_songs paginates saved tracks and returns a pseudo-Playlist.
+    """SpotifyClient.fetch_liked_songs paginates saved tracks and returns a pseudo-Playlist.
 
     The synthetic Playlist has id="__liked__", name="Liked Songs", owner from
     the authenticated user's display_name, and concatenated tracks from all
@@ -127,7 +127,7 @@ def test_liked_songs_paginates_and_synthesizes_pseudo_playlist(tmp_path: Path) -
     }
 
     client = SpotifyClient(sp=fake_sp, cache=cache)
-    playlist = client.liked_songs()
+    playlist = client.fetch_liked_songs()
 
     assert playlist.id == "__liked__"
     assert playlist.name == "Liked Songs"
@@ -140,7 +140,7 @@ def test_liked_songs_paginates_and_synthesizes_pseudo_playlist(tmp_path: Path) -
 
 
 def test_artists_uses_long_ttl_for_cached_entries(tmp_path: Path) -> None:
-    """artists() reads cached entries past the default 7-day TTL.
+    """fetch_artists() reads cached entries past the default 7-day TTL.
 
     Pins the contract that ARTIST_CACHE_TTL_DAYS is plumbed into
     cache.get's ttl_days override. Without the long TTL, this test would
@@ -161,13 +161,13 @@ def test_artists_uses_long_ttl_for_cached_entries(tmp_path: Path) -> None:
 
     fake_sp = MagicMock(spec=[])  # spec=[] means ANY attribute access raises
     client = SpotifyClient(sp=fake_sp, cache=cache)
-    artists = client.artists(["a1"])
+    artists = client.fetch_artists(["a1"])
     assert len(artists) == 1
     assert artists[0].name == "Alice"
 
 
 def test_artists_throttles_between_uncached_fetches(tmp_path: Path) -> None:
-    """artists() sleeps after each real API call (cache hits skip the sleep).
+    """fetch_artists() sleeps after each real API call (cache hits skip the sleep).
 
     Pins the throttle behavior: a 2-artist fetch with a cold cache should
     invoke time.sleep twice, with the value from ARTIST_FETCH_DELAY_SECONDS.
@@ -183,7 +183,7 @@ def test_artists_throttles_between_uncached_fetches(tmp_path: Path) -> None:
 
     client = SpotifyClient(sp=fake_sp, cache=cache)
     with patch("spotify_project.client.time.sleep") as mock_sleep:
-        client.artists(["a1", "a2"])
+        client.fetch_artists(["a1", "a2"])
     assert mock_sleep.call_count == 2
     for call in mock_sleep.call_args_list:
         assert call.args[0] == SpotifyClient.ARTIST_FETCH_DELAY_SECONDS
