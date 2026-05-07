@@ -6,7 +6,7 @@ from __future__ import annotations
 # A per-file disable is the narrowest scope available — there is no per-call-site workaround for `**kwargs: Unknown` propagation.
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import pandas as pd
@@ -32,7 +32,8 @@ def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
         summary: The analyze() output. Used to read ``attrs["coverage"]``.
     """
     suffix = ""
-    match summary.attrs.get("coverage"):
+    coverage = cast(tuple[int, int] | None, summary.attrs.get("coverage"))
+    match coverage:
         case (int(n_data), int(n_total)) if n_total > 0 and n_data < n_total:
             pct = n_data / n_total
             suffix = f" ({n_data}/{n_total} tracks, {pct:.0%} coverage)"
@@ -172,7 +173,7 @@ class GenreAnalyzer(Analyzer):
         ax.barh(summary["genre"], summary["count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
-        coverage: tuple[int, int] = summary.attrs.get("coverage", (0, 0))
+        coverage = cast(tuple[int, int], summary.attrs.get("coverage", (0, 0)))
         match coverage:
             case (n_data, n_total) if n_total > 0 and n_data < n_total:
                 missing_frac = 1 - n_data / n_total
