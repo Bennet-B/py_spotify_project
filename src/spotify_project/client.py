@@ -121,6 +121,7 @@ class SpotifyClient:
 
         Two-phase: paginated track fetch, then a batched artist fetch for unique artist IDs across all tracks.
         Each Track ends up holding full ``Artist`` references (with genres) — callers can read ``track.primary_artist.genres`` directly.
+        Cached with default TTL (see ``FileCache``); pass ``force_refresh=True`` to bypass.
 
         Args:
             playlist_id: Spotify playlist ID.
@@ -186,7 +187,8 @@ class SpotifyClient:
                     "added_at": it.get("added_at"),
                     "is_local": False,
                 }
-                for it in raw_items if it.get("track")
+                for it in raw_items
+                if it.get("track")
             ]
             data = {
                 "id": "__liked__",
@@ -235,6 +237,7 @@ class SpotifyClient:
         """Fetch artists by ID, one call per artist.
 
         Spotify removed the batch ``GET /artists?ids=...`` endpoint in February 2026 (403 Forbidden for new apps). The only path now is single-artist ``GET /artists/{id}``. Each result is cached individually under ``artist/<id>``, so a refresh of the same playlist hits the cache instead of the API.
+        Cached with default TTL (see ``FileCache``); pass ``force_refresh=True`` to bypass.
 
         Args:
             artist_ids: Iterable of Spotify artist IDs.
@@ -256,7 +259,7 @@ class SpotifyClient:
             ids_iter = ids
         for i, artist_id in enumerate(ids_iter):
             cache_key = f"artist/{artist_id}"
-            cached = (None if force_refresh else self.cache.get(cache_key, ttl_days=self.ARTIST_CACHE_TTL_DAYS))
+            cached = None if force_refresh else self.cache.get(cache_key, ttl_days=self.ARTIST_CACHE_TTL_DAYS)
             data: dict[str, Any]
             if cached is None:
                 logger.debug("Cache miss — fetching artist %s", artist_id)
