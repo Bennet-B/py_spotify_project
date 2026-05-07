@@ -7,20 +7,34 @@ The repo will grow in two phases:
 1. **A Jupyter notebook** that authenticates you, pulls your playlists, and produces a stack of charts and stats about them.
 2. **A small web UI** (Streamlit or FastAPI — TBD) that does the same interactively, plus playlist organization features: split, merge, dedupe, re-sort.
 
-## A note about the Spotify Web API in 2026 — the sad part
+## A note about the Spotify Web API in 2026 — what happened and why it shaped this codebase
 
-In **late November 2024** Spotify deprecated several of the most fun parts of its public Web API for any developer app registered after that date:
+This is a quick history of constraints, not just a list of missing features. Each cutback changed how the code had to be written.
+
+### The timeline
+
+**November 2024** — Spotify removed the richest analysis endpoints for any developer app registered from that point on:
 
 - `audio-features` — danceability, energy, valence, tempo, key, acousticness, instrumentalness, loudness, etc.
 - `audio-analysis` — bar / beat / segment-level structural data
 - `recommendations` — "give me tracks like these"
 - `related-artists`
-- featured / category playlists
-- genre seeds
+- featured / category playlists, genre seeds
 
-Further endpoints were trimmed in early 2026.
+Apps grandfathered before that date kept access, but we're a new app, so these return `403 Forbidden`.
 
-Because **this app is brand-new**, none of those work for us — the API returns `403 Forbidden`. Apps that had extended quota *before* Nov 2024 are grandfathered in, but we're not. The classic "valence × energy mood map" plot you'll see in older Spotify-analytics tutorials is **not** something we can build today.
+**February 2026** — Spotify removed the batch-artists endpoint (`GET /artists?ids=...`) for new apps. What had been a single round-trip for a whole playlist's worth of artists became **one HTTP call per artist**. A 3 000-track library can reference 2 000+ unique artists; at one request per artist the naive approach would be extremely slow.
+
+### How the cutbacks shaped the design
+
+**Caching became load-bearing, not nice-to-have.**
+Before the Feb 2026 change, artist data was cheap — one call, all artists. Now every uncached artist costs a real API round-trip. `FileCache` stores each artist for 365 days so the per-artist cost is paid once and amortized over an entire year of notebook runs.
+
+**Rate limits are now the binding constraint.**
+With one request per artist, the client must throttle. Artist fetches are spaced 250 ms apart (~4 req/s) to stay well inside Spotify's rolling-window rate limit. The progress bar (via `tqdm` if installed) and INFO log lines exist specifically because fetching a fresh playlist with 500+ unique artists takes over two minutes — without feedback the notebook would look frozen.
+
+**Genre data moved up one level.**
+Spotify has never exposed genre at the track level. Genres live on the *artist* object. To report a track's genre we look up its primary artist and pull genres from there. This is the only source available.
 
 ### What this means for the codebase
 
@@ -130,3 +144,33 @@ Expected: 42 tests pass.
 | Pandas analysis + visualization | 4 | `analyzer.py` (plotting included), notebook |
 | Code quality (≥ 3 unit tests, structure) | 4 | `tests/` |
 | Presentation + ability to explain | 4 | (final lab session) |
+
+## Phase 2 plans
+
+Phase 1 is a Jupyter notebook. Phase 2 is a small web UI with playlist-mutation features. A few decisions deferred from Phase 1 are recorded here so they land in the right place in the codebase when the time comes.
+
+### Async client migration
+
+The current `SpotifyClient` is synchronous. This is intentional for Phase 1: `spotipy` is a sync library, and Spotify's per-app rate limit means firing requests in parallel doesn't actually speed anything up — the API throttles us at the app level regardless of how many concurrent connections we open. Parallelism would be cosmetic at best.
+
+The calculation changes in a web UI: with multiple users hitting the server simultaneously, one user's slow artist fetch should not block another user's request. That's the point at which `async` pays off.
+
+The architecture is already laid out to make migration straightforward. `SpotifyClient` is cleanly separated from `models.py` (which is pure Python dataclasses) and `analyzer.py` (which is pure pandas). An async `AsyncSpotifyClient` can be a drop-in replacement that exposes the same `playlist()` / `liked_songs()` / `artists()` interface — nothing in the analyzer layer would need to change.
+
+### Web UI framework
+
+Two realistic options, each with a different tradeoff:
+
+- **Streamlit** — pure Python, around 50 lines for a working interactive UI. Best if rapid iteration and demo speed matter more than architectural purity.
+- **FastAPI + minimal HTML/JS** — more setup, but a more realistic production stack. Better if we want to show "real" web-dev skills in the presentation.
+
+Decision deferred until Phase 1 is complete and delivered.
+
+### Mutation scopes
+
+Phase 1 uses read-only OAuth scopes. Phase 2 playlist-mutation features (create, split, merge, dedupe, re-sort) require two additional scopes:
+
+- `playlist-modify-private`
+- `playlist-modify-public`
+
+These are already documented in `CLAUDE.md` and will be added to `SpotifyClient.DEFAULT_SCOPES` when the first mutation feature lands.
