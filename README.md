@@ -117,6 +117,20 @@ jupyter notebook notebooks/01_explore_playlist.ipynb
 - To analyze a different playlist, replace the `PLAYLIST_ID` in the fetch cell with one of your own playlist IDs (visible in the playlist-list cell's output).
 - To analyze your "Liked Songs" instead, set `PLAYLIST_ID = "__liked__"`.
 
+### Code quality
+
+The project uses strict linting and type checking:
+
+```
+ruff check                                      # Lint
+ruff format                                     # Format (Black-compatible)
+pyright                                         # Type check (strict mode)
+.venv/Scripts/python.exe -m pytest -q          # Tests (Windows)
+.venv/bin/python -m pytest -q                  # Tests (macOS / Linux)
+```
+
+See `pyproject.toml` for tooling configuration.
+
 ### Run the test suite
 
 ```
