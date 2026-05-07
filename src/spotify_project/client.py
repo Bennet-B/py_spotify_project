@@ -105,9 +105,11 @@ class SpotifyClient:
         return cast(dict[str, Any], self.sp.current_user())
 
     def user_playlists(self) -> list[dict[str, Any]]:
-        """List the authenticated user's playlists (id, name, track count).
+        """List the authenticated user's playlists as raw Spotify playlist dicts.
 
-        Filters out ``None`` entries — Spotify occasionally returns null slots in the array for deleted or otherwise inaccessible playlists.
+        Returns playlists with fields: id, name, owner, tracks.total, images, …
+        and more. Filters out ``None`` entries — Spotify occasionally returns null
+        slots in the array for deleted or otherwise inaccessible playlists.
         """
         results = cast(dict[str, Any], self.sp.current_user_playlists())
         items: list[dict[str, Any]] = [p for p in results["items"] if p is not None]
