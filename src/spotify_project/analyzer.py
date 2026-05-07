@@ -19,6 +19,8 @@ from .models import Playlist
 
 logger = logging.getLogger(__name__)
 
+_LOW_COVERAGE_THRESHOLD = 0.7
+
 # A color accepted by Matplotlib: either a CSS hex/name string or an RGB float-triple (0.0–1.0 per channel) as returned by seaborn palettes.
 _Color = str | tuple[float, float, float]
 
@@ -109,7 +111,7 @@ class Analyzer(ABC):
         return (n, n)
 
     def _attach_coverage(self, summary: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
-        """Stamp coverage onto ``summary.attrs["coverage"]`` and return. (Helper method for concrete analyzers)
+        """Stamp coverage onto ``summary.attrs["coverage"]``, warn when low, and return.
 
         Args:
             summary: The DataFrame that ``analyze`` is about to return.
@@ -118,7 +120,16 @@ class Analyzer(ABC):
         Returns:
             ``summary``, with ``attrs["coverage"]`` set.
         """
-        summary.attrs["coverage"] = self.coverage(df)
+        n_data, n_total = self.coverage(df)
+        if n_total > 0 and n_data / n_total < _LOW_COVERAGE_THRESHOLD:
+            logger.warning(
+                "%s: low coverage %d/%d (%.0f%%)",
+                self.effective_title,
+                n_data,
+                n_total,
+                100 * n_data / n_total,
+            )
+        summary.attrs["coverage"] = (n_data, n_total)
         return summary
 
 
