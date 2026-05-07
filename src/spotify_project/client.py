@@ -137,7 +137,9 @@ class SpotifyClient:
             logger.info("Fetching playlist %s from API", playlist_id)
             data = cast(dict[str, Any], self.sp.playlist(playlist_id))
             if not data.get("items"):
-                raise ValueError(f"Playlist {playlist_id} returned no track details.")
+                owner_name = data.get("owner", {}).get("display_name", "<unknown>")
+                playlist_name = data.get("name", "<unknown>")
+                raise ValueError(f"Playlist {playlist_id} [Owner: {owner_name}, Name: {playlist_name}] returned no track details.")
             track_items: list[dict[str, Any]] = list(data["items"]["items"])
             page: dict[str, Any] = data["items"]
             while page.get("next"):
