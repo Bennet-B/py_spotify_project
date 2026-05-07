@@ -130,6 +130,42 @@ class Track:
 
 
 @dataclass(slots=True, frozen=True)
+class User:
+    """Authenticated Spotify user profile.
+
+    Attributes:
+        id: Spotify user ID.
+        display_name: Public display name.
+        email: Account email; may be absent depending on granted scopes.
+    """
+
+    id: str
+    display_name: str
+    email: str | None
+
+
+@dataclass(slots=True, frozen=True)
+class PlaylistSummary:
+    """Lightweight playlist entry as returned by the user-playlists listing.
+
+    Distinct from ``Playlist`` (which holds enriched tracks and artists).
+
+    Attributes:
+        id: Spotify playlist ID.
+        name: Display name.
+        owner_name: Display name of the playlist's owner.
+        track_count: Total number of tracks reported by the API.
+        public: Whether the playlist is publicly visible.
+    """
+
+    id: str
+    name: str
+    owner_name: str
+    track_count: int
+    public: bool
+
+
+@dataclass(slots=True, frozen=True)
 class Playlist:
     """A Spotify playlist with metadata and its tracks.
 

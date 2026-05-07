@@ -23,7 +23,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
 from .cache import FileCache
-from .models import Artist, Playlist, Track
+from .models import Artist, Playlist, PlaylistSummary, Track, User
 
 logger = logging.getLogger(__name__)
 
@@ -100,23 +100,44 @@ class SpotifyClient:
         sp = spotipy.Spotify(auth_manager=oauth)
         return cls(sp=sp, cache=cache)
 
-    def fetch_current_user(self) -> dict[str, Any]:
-        """Return the authenticated user's profile dict."""
-        return cast(dict[str, Any], self.sp.current_user())
+    def fetch_current_user(self) -> User:
+        """Return the authenticated user's profile.
 
-    def fetch_user_playlists(self) -> list[dict[str, Any]]:
-        """List the authenticated user's playlists as raw Spotify playlist dicts.
+        Returns:
+            Parsed ``User`` with id, display_name, and email (None if scope not granted).
+        """
+        data = cast(dict[str, Any], self.sp.current_user())
+        return User(
+            id=data.get("id", "") or "",
+            display_name=data.get("display_name", "") or "",
+            email=data.get("email"),
+        )
 
-        Returns playlists with fields: id, name, owner, tracks.total, images, …
-        and more. Filters out ``None`` entries — Spotify occasionally returns null
-        slots in the array for deleted or otherwise inaccessible playlists.
+    def fetch_user_playlists(self) -> list[PlaylistSummary]:
+        """List the authenticated user's playlists.
+
+        Filters out ``None`` slots in the API response (Spotify occasionally returns
+        null entries for deleted or inaccessible playlists).
+
+        Returns:
+            List of ``PlaylistSummary`` objects, one per playlist.
         """
         results = cast(dict[str, Any], self.sp.current_user_playlists())
-        items: list[dict[str, Any]] = [p for p in results["items"] if p is not None]
+        raw: list[dict[str, Any]] = [p for p in results["items"] if p is not None]
         while results.get("next"):
             results = cast(dict[str, Any], self.sp.next(results))
-            items.extend(p for p in results["items"] if p is not None)
-        return items
+            raw.extend(p for p in results["items"] if p is not None)
+        return [
+            PlaylistSummary(
+                id=str(p.get("id") or ""),
+                name=str(p.get("name") or ""),
+                owner_name=str((p.get("owner") or {}).get("display_name") or ""),  # pyright: ignore[reportUnknownArgumentType]
+                # Spotify renamed tracks → items in Feb 2026; handle both for cached responses.
+                track_count=int((p.get("items") or p.get("tracks") or {}).get("total", 0)),  # pyright: ignore[reportUnknownArgumentType]
+                public=bool(p.get("public", False)),
+            )
+            for p in raw
+        ]
 
     def fetch_playlist(self, playlist_id: str, *, force_refresh: bool = False) -> Playlist:
         """Fetch a playlist by ID, fully enriched with Artist objects.
@@ -197,7 +218,7 @@ class SpotifyClient:
             data = {
                 "id": "__liked__",
                 "name": "Liked Songs",
-                "owner": {"display_name": self.fetch_current_user().get("display_name", "")},
+                "owner": {"display_name": self.fetch_current_user().display_name},
                 "public": False,
                 "collaborative": False,
                 "description": "",
