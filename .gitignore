@@ -33,6 +33,10 @@ week_10_infodump/_extracted/
 # Exported chat transcripts (created by /export) — not part of the project
 *chat-history*.txt
 
+# Local test output captures
+test_output.txt
+test_pyright.txt
+
 # IDE
 .idea/
 .vscode/
