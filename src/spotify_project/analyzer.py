@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 _Color = str | tuple[float, float, float]
 
 
+def _get_coverage(summary: pd.DataFrame) -> tuple[int, int] | None:
+    """Read the (n_data, n_total) coverage tuple stamped by Analyzer._attach_coverage, if present."""
+    return cast(tuple[int, int] | None, summary.attrs.get("coverage"))
+
+
 def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
     """Apply the Sprint C consistent style + coverage suffix to an Axes.
 
@@ -35,7 +40,7 @@ def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
         summary: The analyze() output. Used to read ``attrs["coverage"]``.
     """
     suffix = ""
-    coverage = cast(tuple[int, int] | None, summary.attrs.get("coverage"))
+    coverage = _get_coverage(summary)
     match coverage:
         case (int(n_data), int(n_total)) if n_total > 0 and n_data < n_total:
             pct = n_data / n_total
@@ -177,7 +182,7 @@ class GenreAnalyzer(Analyzer):
         ax.barh(summary["genre"], summary["count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
-        coverage = cast(tuple[int, int], summary.attrs.get("coverage", (0, 0)))
+        coverage = _get_coverage(summary)
         match coverage:
             case (n_data, n_total) if n_total > 0 and n_data < n_total:
                 missing_frac = 1 - n_data / n_total
