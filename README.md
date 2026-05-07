@@ -52,23 +52,79 @@ So no mood-map, but a perfectly rich semester-project worth of analysis.
 - 2026-04-30: Project kickoff. Course brief reviewed, API state verified, plan agreed with user. Notebook scaffolding next.
 - *(more dated entries land here as we build.)*
 
-## How to run *(placeholder — fills in as we build)*
+## How to run
 
-1. Clone the repo
-2. Create a Python 3.11+ virtual environment: `python -m venv .venv` then activate it
-3. Install dependencies: `pip install -r requirements.txt`
-4. Register a Spotify Developer App at <https://developer.spotify.com/dashboard>; set its redirect URI to `http://127.0.0.1:8888/callback`
-5. Copy `.env.example` to `.env` and paste your `client_id` / `client_secret`
-6. Open `notebooks/01_explore_user_account.ipynb` and run
+### Prerequisites
 
-## Modules *(placeholder)*
+- Python 3.11 or later (3.14 tested)
+- A Spotify Developer App — register one at <https://developer.spotify.com/dashboard>
 
-- `src/spotify_project/client.py` — auth and API access via `spotipy`
-- `src/spotify_project/models.py` — `SpotifyResource` (ABC) and `Track` / `Playlist` / `Artist` subclasses
-- `src/spotify_project/analyzer.py` — pandas-based analyses of a playlist or set of playlists
-- `src/spotify_project/visualizer.py` — matplotlib / seaborn plots
-- `tests/` — pytest unit tests
-- `notebooks/` — exploratory notebook(s)
+### Setup
+
+1. Clone the repo and enter the directory:
+   ```
+   git clone <repo-url> py_spotify_project
+   cd py_spotify_project
+   ```
+
+2. Create and activate a virtual environment:
+   ```
+   # Windows
+   python -m venv .venv
+   .venv\Scripts\activate
+
+   # macOS / Linux
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+4. Register a Spotify app (if you don't have one):
+   - Go to <https://developer.spotify.com/dashboard> → "Create app"
+   - Set the redirect URI to `http://127.0.0.1:8888/callback`
+   - Copy your `client_id` and `client_secret`
+
+5. Configure credentials:
+   ```
+   cp .env.example .env
+   ```
+   Then edit `.env` and fill in:
+   - `SPOTIPY_CLIENT_ID` — from the dashboard
+   - `SPOTIPY_CLIENT_SECRET` — from the dashboard
+   - `SPOTIPY_REDIRECT_URI` — e.g. `http://127.0.0.1:8888/callback`
+
+### Run the notebook
+
+```
+jupyter notebook notebooks/01_explore_playlist.ipynb
+```
+
+- The first run opens a browser for OAuth; grant the scopes.
+- Subsequent runs use the cached token at `.cache/spotify_token` and don't prompt.
+- To analyze a different playlist, replace the `PLAYLIST_ID` in the fetch cell with one of your own playlist IDs (visible in the playlist-list cell's output).
+- To analyze your "Liked Songs" instead, set `PLAYLIST_ID = "__liked__"`.
+
+### Run the test suite
+
+```
+.venv/Scripts/python.exe -m pytest -q          # Windows
+.venv/bin/python -m pytest -q                  # macOS / Linux
+```
+
+Expected: 42 tests pass.
+
+## Modules
+
+- `src/spotify_project/cache.py` — `FileCache`, a simple file-based JSON cache with TTL
+- `src/spotify_project/client.py` — `SpotifyClient`, OAuth + API access via `spotipy` (playlists, liked songs, artists)
+- `src/spotify_project/models.py` — `Track`, `Playlist`, `Artist` (frozen dataclasses)
+- `src/spotify_project/analyzer.py` — `Analyzer` ABC + six concrete analyzers (Genre, Year, Artist, Popularity, Duration, Timeline) + `PlaylistAnalyzer` orchestrator. Includes plotting.
+- `tests/` — pytest unit tests (42 as of Sprint C)
+- `notebooks/01_explore_playlist.ipynb` — demo notebook
 
 ## Course grading map (20 pts)
 
@@ -76,6 +132,6 @@ So no mood-map, but a perfectly rich semester-project worth of analysis.
 | --- | --- | --- |
 | OOP design (classes, inheritance) | 4 | `src/spotify_project/models.py`, `client.py`, `analyzer.py` |
 | Internet data access (API + robustness) | 4 | `client.py` (spotipy session retries, 403/429 handling) |
-| Pandas analysis + visualization | 4 | `analyzer.py`, `visualizer.py`, notebook |
+| Pandas analysis + visualization | 4 | `analyzer.py` (plotting included), notebook |
 | Code quality (≥ 3 unit tests, structure) | 4 | `tests/` |
 | Presentation + ability to explain | 4 | (final lab session) |
