@@ -77,6 +77,18 @@ class Analyzer(ABC):
                 "class attribute 'title'"
             )
 
+    @property
+    def effective_title(self) -> str:
+        """Return the per-instance title if set, else the class-level ``title``.
+
+        Per-instance titles are set by passing ``title=`` to a concrete
+        analyzer's constructor. They let multiple instances of the same
+        subclass coexist in one ``PlaylistAnalyzer`` without colliding on
+        the dict key in ``run_all``.
+        """
+        instance_title = getattr(self, "_instance_title", None)
+        return instance_title if instance_title is not None else type(self).title
+
     @abstractmethod
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Return a summary DataFrame derived from the track-level df."""
@@ -128,8 +140,9 @@ class GenreAnalyzer(Analyzer):
 
     title = "Top Genres"
 
-    def __init__(self, top_n: int = 15) -> None:
+    def __init__(self, top_n: int = 15, *, title: str | None = None) -> None:
         self.top_n = top_n
+        self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
         """Count rows whose ``genres`` list is non-empty."""
@@ -184,7 +197,7 @@ class GenreAnalyzer(Analyzer):
         c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No genre data", ha="center", va="center")
-            _style_axes(ax, self.title, summary)
+            _style_axes(ax, self.effective_title, summary)
             return
         ax.barh(summary["genre"], summary["count"], color=c)
         ax.invert_yaxis()
@@ -208,7 +221,7 @@ class GenreAnalyzer(Analyzer):
                 )
             case _:
                 pass
-        _style_axes(ax, self.title, summary)
+        _style_axes(ax, self.effective_title, summary)
 
 
 class YearAnalyzer(Analyzer):
@@ -226,12 +239,13 @@ class YearAnalyzer(Analyzer):
 
     title = "Release Year Distribution"
 
-    def __init__(self, bucket_size: int = 1) -> None:
+    def __init__(self, bucket_size: int = 1, *, title: str | None = None) -> None:
         if bucket_size < 1:
             raise ValueError(
                 f"bucket_size must be a positive integer, got {bucket_size}"
             )
         self.bucket_size = bucket_size
+        self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
         """Count rows with a parseable 4-digit release year."""
@@ -291,7 +305,7 @@ class YearAnalyzer(Analyzer):
         c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No year data", ha="center", va="center")
-            _style_axes(ax, self.title, summary)
+            _style_axes(ax, self.effective_title, summary)
             return
         ax.bar(
             summary["year"],
@@ -307,7 +321,7 @@ class YearAnalyzer(Analyzer):
         )
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Track count")
-        _style_axes(ax, self.title, summary)
+        _style_axes(ax, self.effective_title, summary)
 
 
 def _zip_pairs(row: pd.Series[Any]) -> list[tuple[str, str]]:
@@ -341,9 +355,16 @@ class ArtistAnalyzer(Analyzer):
 
     title = "Top Artists"
 
-    def __init__(self, top_n: int = 15, primary_only: bool = False) -> None:
+    def __init__(
+        self,
+        top_n: int = 15,
+        primary_only: bool = False,
+        *,
+        title: str | None = None,
+    ) -> None:
         self.top_n = top_n
         self.primary_only = primary_only
+        self._instance_title = title
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Aggregate track count and total minutes per artist.
@@ -440,12 +461,12 @@ class ArtistAnalyzer(Analyzer):
         c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No artist data", ha="center", va="center")
-            _style_axes(ax, self.title, summary)
+            _style_axes(ax, self.effective_title, summary)
             return
         ax.barh(summary["artist_name"], summary["track_count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
-        _style_axes(ax, self.title, summary)
+        _style_axes(ax, self.effective_title, summary)
 
 
 class PopularityAnalyzer(Analyzer):
@@ -461,10 +482,11 @@ class PopularityAnalyzer(Analyzer):
 
     title = "Popularity Distribution"
 
-    def __init__(self, bins: int = 10) -> None:
+    def __init__(self, bins: int = 10, *, title: str | None = None) -> None:
         if bins < 1:
             raise ValueError(f"bins must be a positive integer, got {bins}")
         self.bins = bins
+        self._instance_title = title
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Bin track popularity into equal-width buckets across [0, 100].
@@ -510,7 +532,7 @@ class PopularityAnalyzer(Analyzer):
         c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No popularity data", ha="center", va="center")
-            _style_axes(ax, self.title, summary)
+            _style_axes(ax, self.effective_title, summary)
             return
         widths = summary["bin_high"] - summary["bin_low"]
         ax.bar(
@@ -522,7 +544,7 @@ class PopularityAnalyzer(Analyzer):
         ax.set_xlabel("Popularity (0-100)")
         ax.set_ylabel("Track count")
         ax.set_xlim(0, 100)
-        _style_axes(ax, f"{self.title} (mean ≈ {weighted_mean:.1f})", summary)
+        _style_axes(ax, f"{self.effective_title} (mean ≈ {weighted_mean:.1f})", summary)
 
 
 class DurationAnalyzer(Analyzer):
@@ -538,10 +560,11 @@ class DurationAnalyzer(Analyzer):
 
     title = "Track Duration Distribution"
 
-    def __init__(self, bins: int = 20) -> None:
+    def __init__(self, bins: int = 20, *, title: str | None = None) -> None:
         if bins < 1:
             raise ValueError(f"bins must be a positive integer, got {bins}")
         self.bins = bins
+        self._instance_title = title
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Bin track durations and report exact minutes per bin.
@@ -594,7 +617,7 @@ class DurationAnalyzer(Analyzer):
         c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No duration data", ha="center", va="center")
-            _style_axes(ax, self.title, summary)
+            _style_axes(ax, self.effective_title, summary)
             return
         widths = summary["bin_high"] - summary["bin_low"]
         ax.bar(
@@ -605,7 +628,9 @@ class DurationAnalyzer(Analyzer):
         minutes = total_min % 60
         ax.set_xlabel("Duration (minutes)")
         ax.set_ylabel("Track count")
-        _style_axes(ax, f"{self.title} (total runtime: {hours}h {minutes}m)", summary)
+        _style_axes(
+            ax, f"{self.effective_title} (total runtime: {hours}h {minutes}m)", summary
+        )
 
 
 class TimelineAnalyzer(Analyzer):
@@ -622,8 +647,9 @@ class TimelineAnalyzer(Analyzer):
 
     title = "Track Timeline"
 
-    def __init__(self, freq: str = "M") -> None:
+    def __init__(self, freq: str = "M", *, title: str | None = None) -> None:
         self.freq = freq
+        self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
         """Count rows with EITHER added_at OR release_date parseable."""
@@ -700,7 +726,7 @@ class TimelineAnalyzer(Analyzer):
         c = color if color is not None else self.default_color
         if summary.empty:
             ax.text(0.5, 0.5, "No timeline data", ha="center", va="center")
-            _style_axes(ax, self.title, summary)
+            _style_axes(ax, self.effective_title, summary)
             return
         x: pd.Series[Any] = summary["period"].apply(lambda p: p.start_time)  # pyright: ignore[reportUnknownVariableType,reportUnknownArgumentType,reportUnknownLambdaType,reportUnknownMemberType]
         ax.fill_between(x, summary["count"], step="mid", alpha=0.4, color=c)
@@ -711,7 +737,7 @@ class TimelineAnalyzer(Analyzer):
         source_label = (
             "added_at" if source_col == "added_at" else "release_date (fallback)"
         )
-        _style_axes(ax, f"{self.title} (source: {source_label})", summary)
+        _style_axes(ax, f"{self.effective_title} (source: {source_label})", summary)
 
 
 class PlaylistAnalyzer:
@@ -740,7 +766,7 @@ class PlaylistAnalyzer:
         # and plot_all renders one subplot per analyzer, so a duplicate
         # would silently render the second analyzer's data under both
         # subplots without raising. Better to fail at construction.
-        titles = [a.title for a in self.analyzers]
+        titles = [a.effective_title for a in self.analyzers]
         if len(set(titles)) != len(titles):
             duplicates = sorted({t for t in titles if titles.count(t) > 1})
             raise ValueError(
@@ -803,7 +829,7 @@ class PlaylistAnalyzer:
 
     def run_all(self) -> dict[str, pd.DataFrame]:
         """Run every registered Analyzer; returns ``{title: summary_df}``."""
-        return {a.title: a.analyze(self.df) for a in self.analyzers}
+        return {a.effective_title: a.analyze(self.df) for a in self.analyzers}
 
     def plot_all(self, fig: Figure) -> None:
         """Lay out one subplot per analyzer in a vertical stack on ``fig``.
@@ -822,7 +848,7 @@ class PlaylistAnalyzer:
         axes_list = [axes] if n == 1 else list(axes)
         palette = sns.color_palette("colorblind", n_colors=n)
         for ax, analyzer, color in zip(axes_list, self.analyzers, palette, strict=True):
-            analyzer.plot(ax, summaries[analyzer.title], color=color)
+            analyzer.plot(ax, summaries[analyzer.effective_title], color=color)
         fig.tight_layout()
 
     def to_parquet(self, path: Path) -> None:

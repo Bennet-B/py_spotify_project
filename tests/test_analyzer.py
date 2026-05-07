@@ -579,6 +579,24 @@ def test_genre_analyzer_plot_draws_band_when_coverage_below_100() -> None:
     assert patches_partial > patches_full
 
 
+def test_playlist_analyzer_accepts_two_year_analyzers_with_distinct_titles() -> None:
+    """Per-instance title override lets two same-class instances coexist.
+
+    Without the override, registering two YearAnalyzer instances would
+    collide on the class-level title. With the override, a custom title=
+    kwarg gives each its own slot.
+    """
+    pa = PlaylistAnalyzer(
+        df=pd.DataFrame(),
+        analyzers=[
+            YearAnalyzer(bucket_size=5, title="Years (5y)"),
+            YearAnalyzer(bucket_size=10, title="Years (10y)"),
+        ],
+    )
+    titles = [a.effective_title for a in pa.analyzers]
+    assert titles == ["Years (5y)", "Years (10y)"]
+
+
 def test_timeline_analyzer_summary_includes_source_column() -> None:
     """TimelineAnalyzer.analyze stamps the source ('added_at' or 'release_date')
     onto every row of the summary, eliminating the need for instance state."""
