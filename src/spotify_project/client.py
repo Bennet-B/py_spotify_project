@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
-# spotipy's inline annotations leave several core methods partially typed (next, playlist, artist). 
-# Their parameter types are `Unknown` because spotipy uses `**kwargs` forwarding internally. 
+# spotipy's inline annotations leave several core methods partially typed (next, playlist, artist).
+# Their parameter types are `Unknown` because spotipy uses `**kwargs` forwarding internally.
 # All call sites already wrap the return value with `cast(dict[str, Any], …)`, so the Unknown only surfaces at the method-type level, not in our downstream usage.
 import logging
 import os
@@ -47,11 +47,11 @@ class SpotifyClient:
 
     DEFAULT_TOKEN_CACHE: ClassVar[str] = ".cache/spotify_token"
 
-    # Artist genres / popularity rarely change; long TTL avoids re-paying the per-artist API cost on every notebook re-run. 
+    # Artist genres / popularity rarely change; long TTL avoids re-paying the per-artist API cost on every notebook re-run.
     # Spotify's Feb 2026 batch-artists deprecation made these calls expensive (one round-trip per artist), and a 3000-track library can easily reference 2000+ unique artists.
     ARTIST_CACHE_TTL_DAYS: ClassVar[float] = 365.0
 
-    # Inter-call sleep applied AFTER each uncached artist fetch. ~4 req/sec stays well under Spotify's rolling-window rate limit. 
+    # Inter-call sleep applied AFTER each uncached artist fetch. ~4 req/sec stays well under Spotify's rolling-window rate limit.
     # Cache hits skip the sleep, so a warm cache pays no overhead.
     ARTIST_FETCH_DELAY_SECONDS: ClassVar[float] = 0.25
 
@@ -63,7 +63,7 @@ class SpotifyClient:
     def from_env(cls, cache: FileCache, scopes: list[str] | None = None) -> SpotifyClient:
         """Build an OAuth-authenticated client from SPOTIPY_* env vars.
 
-        Reads required credentials from the process environment (loaded from ``.env`` via python-dotenv at notebook startup, or set as OS env vars). 
+        Reads required credentials from the process environment (loaded from ``.env`` via python-dotenv at notebook startup, or set as OS env vars).
         Fails loud at construction time if any are missing, rather than letting spotipy surface a cryptic HTTP 400 later.
 
         Args:
@@ -111,7 +111,7 @@ class SpotifyClient:
     def playlist(self, playlist_id: str, *, force_refresh: bool = False) -> Playlist:
         """Fetch a playlist by ID, fully enriched with Artist objects.
 
-        Two-phase: paginated track fetch, then a batched artist fetch for unique artist IDs across all tracks. 
+        Two-phase: paginated track fetch, then a batched artist fetch for unique artist IDs across all tracks.
         Each Track ends up holding full ``Artist`` references (with genres) — callers can read ``track.primary_artist.genres`` directly.
 
         Args:
@@ -156,7 +156,7 @@ class SpotifyClient:
     def liked_songs(self, *, force_refresh: bool = False) -> Playlist:
         """Fetch the authenticated user's saved tracks as a pseudo-Playlist.
 
-        Spotify's "Liked Songs" is not a real playlist — it has no id, no owner, no description. 
+        Spotify's "Liked Songs" is not a real playlist — it has no id, no owner, no description.
         We model it as a synthesized ``Playlist`` with ``id="__liked__"`` so the rest of the pipeline (Track parsing, PlaylistAnalyzer, every analyzer) consumes it unchanged.
 
         Two-phase like ``playlist()``: paginate ``current_user_saved_tracks`` (50/page), then batch-fetch unique artists.

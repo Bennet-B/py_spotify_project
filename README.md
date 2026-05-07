@@ -47,16 +47,11 @@ That gives us:
 
 So no mood-map, but a perfectly rich semester-project worth of analysis.
 
-## Project status
-
-- 2026-04-30: Project kickoff. Course brief reviewed, API state verified, plan agreed with user. Notebook scaffolding next.
-- *(more dated entries land here as we build.)*
-
 ## How to run
 
 ### Prerequisites
 
-- Python 3.11 or later (3.14 tested)
+- Python 3.11 or later
 - A Spotify Developer App — register one at <https://developer.spotify.com/dashboard>
 
 ### Setup
@@ -123,7 +118,7 @@ Expected: 42 tests pass.
 - `src/spotify_project/client.py` — `SpotifyClient`, OAuth + API access via `spotipy` (playlists, liked songs, artists)
 - `src/spotify_project/models.py` — `Track`, `Playlist`, `Artist` (frozen dataclasses)
 - `src/spotify_project/analyzer.py` — `Analyzer` ABC + six concrete analyzers (Genre, Year, Artist, Popularity, Duration, Timeline) + `PlaylistAnalyzer` orchestrator. Includes plotting.
-- `tests/` — pytest unit tests (42 as of Sprint C)
+- `tests/` — pytest unit tests (42)
 - `notebooks/01_explore_playlist.ipynb` — demo notebook
 
 ## Course grading map (20 pts)

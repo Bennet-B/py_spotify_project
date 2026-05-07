@@ -28,7 +28,7 @@ class FileCache:
 
         Args:
             key: Cache key (e.g. ``"playlist/<id>"``).
-            ttl_days: Per-call TTL override. When ``None`` (default), uses the instance-level ``self.ttl_days``. 
+            ttl_days: Per-call TTL override. When ``None`` (default), uses the instance-level ``self.ttl_days``.
                 Long-lived data can opt into a longer TTL without requiring a separate cache instance.
 
         Returns:

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
 # matplotlib stubs use `**kwargs: Unknown` on every Axes method (text, bar, barh, set_xlabel, set_ylabel, set_title, invert_yaxis, tight_layout, …).
-# The methods themselves are fully typed; only the pass-through kwargs are Unknown. 
+# The methods themselves are fully typed; only the pass-through kwargs are Unknown.
 # A per-file disable is the narrowest scope available — there is no per-call-site workaround for `**kwargs: Unknown` propagation.
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Callable, ClassVar, List
+from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
@@ -23,7 +23,7 @@ _Color = str | tuple[float, float, float]
 def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
     """Apply the Sprint C consistent style + coverage suffix to an Axes.
 
-    Reads ``summary.attrs["coverage"]`` (a ``(n_data, n_total)`` tuple attached by ``Analyzer._attach_coverage``); 
+    Reads ``summary.attrs["coverage"]`` (a ``(n_data, n_total)`` tuple attached by ``Analyzer._attach_coverage``);
     when present and < 100%, appends a coverage suffix to the title.
 
     Args:
@@ -51,11 +51,11 @@ def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
 class Analyzer(ABC):
     """Abstract analyzer over a track DataFrame.
 
-    Concrete subclasses override ``analyze`` (returns a summary DataFrame) and ``plot`` (renders the result onto a Matplotlib Axes provided by the caller). 
+    Concrete subclasses override ``analyze`` (returns a summary DataFrame) and ``plot`` (renders the result onto a Matplotlib Axes provided by the caller).
     Each subclass MUST also declare a non-empty class-level ``title``; this is enforced at class-definition time.
 
     Attributes:
-        title: Short title; appears as the plot's title and is used as the key in ``PlaylistAnalyzer.run_all``'s result dict, 
+        title: Short title; appears as the plot's title and is used as the key in ``PlaylistAnalyzer.run_all``'s result dict,
             so collisions between subclasses would silently overwrite results.
     """
 
@@ -71,7 +71,7 @@ class Analyzer(ABC):
     def effective_title(self) -> str:
         """Return the per-instance title if set, else the class-level ``title``.
 
-        Per-instance titles are set by passing ``title=`` to a concrete analyzer's constructor. 
+        Per-instance titles are set by passing ``title=`` to a concrete analyzer's constructor.
         They let multiple instances of the same subclass coexist in one ``PlaylistAnalyzer`` without colliding on the dict key in ``run_all``.
         """
         instance_title = getattr(self, "_instance_title", None)
@@ -129,8 +129,7 @@ class GenreAnalyzer(Analyzer):
         """Count rows whose ``genres`` list is non-empty."""
         if df.empty or "genres" not in df.columns:
             return (0, len(df))
-        func_check: Callable[[List[Any] | None], bool] = lambda g: bool(g) if isinstance(g, list) else False
-        n_with = int(df["genres"].apply(func_check).sum())
+        n_with = int(df["genres"].apply(lambda g: bool(g) if isinstance(g, list) else False).sum()) # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
         return (n_with, len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -173,11 +172,11 @@ class GenreAnalyzer(Analyzer):
         ax.barh(summary["genre"], summary["count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
-        coverage: tuple[int, int] = summary.attrs.get("coverage", (int(0), int(0)))
+        coverage: tuple[int, int] = summary.attrs.get("coverage", (0, 0))
         match coverage:
             case (n_data, n_total) if n_total > 0 and n_data < n_total:
                 missing_frac = 1 - n_data / n_total
-                # Draw a thin grey band just below the axes, with width proportional to the missing fraction. 
+                # Draw a thin grey band just below the axes, with width proportional to the missing fraction.
                 # transAxes puts both x and y in axes fraction (0..1, with negative values meaning below-bottom); clip_on=False lets it render outside the axes box.
                 ax.axhspan(
                     ymin=-0.05,
@@ -198,8 +197,8 @@ class YearAnalyzer(Analyzer):
     """Release-year distribution, robust to year-only release_date strings.
 
     Args:
-        bucket_size: Year-bucket width. ``1`` (default) yields per-year bars. 
-            ``5`` groups into 5-year buckets (1970, 1975, 1980, ...); ``10`` into decades (1970, 1980, ...). 
+        bucket_size: Year-bucket width. ``1`` (default) yields per-year bars.
+            ``5`` groups into 5-year buckets (1970, 1975, 1980, ...); ``10`` into decades (1970, 1980, ...).
             The reported ``year`` value is always the bucket's lower bound. Must be a positive integer.
 
     Raises:
@@ -311,11 +310,11 @@ class ArtistAnalyzer(Analyzer):
             df: Track-level DataFrame with either ``artist_ids``/``artist_names`` (list columns; used when ``primary_only=False``) or ``primary_artist_id``/``primary_artist_name`` (used when ``primary_only=True``).
 
         Returns:
-            DataFrame with columns ``artist_id``, ``artist_name``, ``track_count``, ``total_minutes``, sorted descending by ``track_count``, limited to ``top_n`` rows. 
+            DataFrame with columns ``artist_id``, ``artist_name``, ``track_count``, ``total_minutes``, sorted descending by ``track_count``, limited to ``top_n`` rows.
             Ties at the ``top_n`` cutoff are broken by ``artist_id`` ascending (groupby's default ordering).
 
         Raises:
-            ValueError: If ``primary_only=False`` and the per-row ``artist_ids`` and ``artist_names`` lists are not the same length. 
+            ValueError: If ``primary_only=False`` and the per-row ``artist_ids`` and ``artist_names`` lists are not the same length.
                 This surfaces schema corruption — the rows produced by ``PlaylistAnalyzer.from_playlist`` are guaranteed to be in lock-step.
         """
         empty = pd.DataFrame(
@@ -343,11 +342,10 @@ class ArtistAnalyzer(Analyzer):
             required = {"artist_ids", "artist_names", "duration_min"}
             if not required.issubset(df.columns):
                 return self._attach_coverage(empty, df)
-            # Explode artist_ids and artist_names in lock-step so each exploded row holds the matching name. 
+            # Explode artist_ids and artist_names in lock-step so each exploded row holds the matching name.
             # Pandas explode preserves ordering within the row, so the parallelism is preserved.
             exploded = df[["artist_ids", "artist_names", "duration_min"]].copy()
-            func_zip_pairs: Callable[[pd.Series[Any]], list[tuple[str, str]]] = lambda row: list(zip(row["artist_ids"], row["artist_names"], strict=True))
-            exploded["pair"] = exploded.apply(func_zip_pairs, axis=1)
+            exploded["pair"] = exploded.apply(lambda row: list(zip(row["artist_ids"], row["artist_names"], strict=True)), axis=1) # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
             exploded = exploded.explode("pair").dropna(subset=["pair"])
             if exploded.empty:
                 return self._attach_coverage(empty, df)
@@ -497,8 +495,8 @@ class DurationAnalyzer(Analyzer):
         if values.empty:
             return self._attach_coverage(empty, df)
         counts, edges = np.histogram(values, bins=self.bins)
-        # Exact minutes per bin: digitize each value to its bin index, then sum durations weighted into bincount. 
-        # np.digitize uses 1-based indices for values inside the range; 
+        # Exact minutes per bin: digitize each value to its bin index, then sum durations weighted into bincount.
+        # np.digitize uses 1-based indices for values inside the range;
         # subtract 1 and clip the last edge so the rightmost value lands in the final bin (matches np.histogram's right-inclusive last bin).
         bin_idx = np.clip(np.digitize(values, edges) - 1, 0, self.bins - 1)
         minutes_in_bin = np.bincount(bin_idx, weights=values, minlength=self.bins)
@@ -574,7 +572,7 @@ class TimelineAnalyzer(Analyzer):
             df: Track-level DataFrame; must contain ``added_at`` and optionally ``release_date``.
 
         Returns:
-            DataFrame with columns ``period`` (pandas Period), ``count``, and ``source`` (``"added_at"`` or ``"release_date"``, repeated on every row), 
+            DataFrame with columns ``period`` (pandas Period), ``count``, and ``source`` (``"added_at"`` or ``"release_date"``, repeated on every row),
             sorted ascending by period.
         """
         empty = pd.DataFrame({"period": [], "count": [], "source": []})
@@ -614,8 +612,7 @@ class TimelineAnalyzer(Analyzer):
             ax.text(0.5, 0.5, "No timeline data", ha="center", va="center")
             _style_axes(ax, self.effective_title, summary)
             return
-        func_start_time: Callable[[pd.Period], pd.Timestamp] = lambda p: p.start_time
-        x: pd.Series[Any] = summary["period"].apply(func_start_time)
+        x: pd.Series[Any] = summary["period"].apply(lambda p: p.start_time) # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
         ax.fill_between(x, summary["count"], step="mid", alpha=0.4, color=c)
         ax.plot(x, summary["count"], marker="o", color=c)
         ax.set_xlabel("Time")
@@ -647,7 +644,7 @@ class PlaylistAnalyzer:
                 TimelineAnalyzer(),
             ]
         )
-        # Reject duplicate titles loudly: run_all keys results by title and plot_all renders one subplot per analyzer, 
+        # Reject duplicate titles loudly: run_all keys results by title and plot_all renders one subplot per analyzer,
         # so a duplicate would silently render the second analyzer's data under both subplots without raising. Better to fail at construction.
         titles = [a.effective_title for a in self.analyzers]
         if len(set(titles)) != len(titles):
@@ -658,7 +655,7 @@ class PlaylistAnalyzer:
     def from_playlist(cls, playlist: Playlist, analyzers: list[Analyzer] | None = None) -> PlaylistAnalyzer:
         """Build a PlaylistAnalyzer from a Playlist by flattening tracks.
 
-        Each Track's ``primary_artist`` is read for the ``primary_artist_*`` and ``genres`` columns. 
+        Each Track's ``primary_artist`` is read for the ``primary_artist_*`` and ``genres`` columns.
         Local files (``is_local=True``) yield empty genres and ``None`` for artist IDs.
 
         Args:
@@ -672,11 +669,7 @@ class PlaylistAnalyzer:
         for t in playlist.tracks:
             primary = t.primary_artist
             release_date = t.release_date
-            release_year: int | None
-            if release_date and release_date[:4].isdigit():
-                release_year = int(release_date[:4])
-            else:
-                release_year = None
+            release_year: int | None = int(release_date[:4]) if release_date and release_date[:4].isdigit() else None
             rows.append(
                 {
                     "track_id": t.id,
