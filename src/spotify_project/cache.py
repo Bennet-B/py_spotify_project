@@ -7,7 +7,7 @@ from typing import Any, cast
 
 # src/spotify_project/cache.py → parents[0] = src/spotify_project, parents[1] = src, parents[2] = repo root
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CACHE_DIR = _PROJECT_ROOT / ".cache"
+DEFAULT_CACHE_DIR = _PROJECT_ROOT / ".cache" / "api"
 
 
 class FileCache:
