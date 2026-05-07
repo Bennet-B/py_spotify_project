@@ -206,9 +206,11 @@ class GenreAnalyzer(Analyzer):
         match coverage:
             case (int(n_data), int(n_total)) if n_total > 0 and n_data < n_total:
                 missing_frac = 1 - n_data / n_total
-                # Draw a thin grey band along the bottom 4% of the axes,
-                # shading the missing fraction. Uses axes-fraction
-                # transform so it sits independent of the bar y-coords.
+                # Draw a thin grey band just below the axes, with width
+                # proportional to the missing fraction. transAxes puts both
+                # x and y in axes fraction (0..1, with negative values
+                # meaning below-bottom); clip_on=False lets it render
+                # outside the axes box.
                 ax.axhspan(
                     ymin=-0.05,
                     ymax=-0.01,
@@ -216,7 +218,7 @@ class GenreAnalyzer(Analyzer):
                     xmax=missing_frac,
                     facecolor="#999",
                     alpha=0.6,
-                    transform=ax.get_yaxis_transform(),
+                    transform=ax.transAxes,
                     clip_on=False,
                 )
             case _:
@@ -654,7 +656,7 @@ class TimelineAnalyzer(Analyzer):
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
         """Count rows with EITHER added_at OR release_date parseable."""
         if df.empty:
-            return (0, 0)
+            return (0, len(df))
         added_at_ok: pd.Series[Any] = (
             pd.to_datetime(df["added_at"], errors="coerce", utc=True).notna()
             if "added_at" in df.columns
