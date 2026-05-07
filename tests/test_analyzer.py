@@ -614,3 +614,25 @@ def test_timeline_analyzer_summary_includes_source_column() -> None:
     )
     summary_release = TimelineAnalyzer().analyze(df_release)
     assert (summary_release["source"] == "release_date").all()
+
+
+def test_artist_analyzer_raises_value_error_on_mismatched_list_lengths() -> None:
+    """ArtistAnalyzer.analyze raises ValueError when artist_ids and
+    artist_names lists are different lengths in any row.
+
+    The docstring documents this contract; previously no test exercised it.
+    """
+    from spotify_project.analyzer import ArtistAnalyzer
+
+    df = _frame(
+        [
+            {
+                "track_id": "t1",
+                "artist_ids": ["a1", "a2"],
+                "artist_names": ["Alice"],
+                "duration_min": 4.0,
+            },
+        ]
+    )
+    with pytest.raises(ValueError):
+        ArtistAnalyzer().analyze(df)
