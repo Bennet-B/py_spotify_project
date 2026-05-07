@@ -538,3 +538,42 @@ def test_timeline_analyzer_coverage_when_added_at_column_absent() -> None:
     # 2 rows have parseable release_date; row 3 has None.
     # Without the fix, this returns (0, 3) silently.
     assert summary.attrs["coverage"] == (2, 3)
+
+
+def test_genre_analyzer_plot_draws_band_when_coverage_below_100() -> None:
+    """GenreAnalyzer.plot adds an axhspan-style patch when coverage < 100%.
+
+    Coarse check: count the number of patches added to the Axes after
+    drawing. With full coverage, only the bar patches are present. With
+    partial coverage, an additional patch (the missing-fraction band)
+    appears. We use a playlist with enough genres that both full and
+    partial have the same number of genres in the result, differing only
+    in coverage.
+    """
+
+    df_full = _frame(
+        [
+            {"track_id": "1", "genres": ["rock", "indie"]},
+            {"track_id": "2", "genres": ["pop", "electronic"]},
+            {"track_id": "3", "genres": ["rock"]},
+        ]
+    )
+    df_partial = _frame(
+        [
+            {"track_id": "1", "genres": ["rock", "indie"]},
+            {"track_id": "2", "genres": ["pop", "electronic"]},
+            {"track_id": "3", "genres": []},
+        ]
+    )
+
+    def _patch_count(d: pd.DataFrame) -> int:
+        fig = Figure()
+        ax = fig.subplots()
+        analyzer = GenreAnalyzer()
+        summary = analyzer.analyze(d)
+        analyzer.plot(ax, summary)
+        return len(ax.patches)
+
+    patches_full = _patch_count(df_full)
+    patches_partial = _patch_count(df_partial)
+    assert patches_partial > patches_full

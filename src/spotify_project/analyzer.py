@@ -173,7 +173,8 @@ class GenreAnalyzer(Analyzer):
     def plot(
         self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None
     ) -> None:
-        """Render a horizontal bar chart of genre counts.
+        """Render a horizontal bar chart of genre counts, plus a
+        missing-fraction band beneath the bars when coverage is partial.
 
         Args:
             ax: Matplotlib Axes to draw on.
@@ -188,6 +189,25 @@ class GenreAnalyzer(Analyzer):
         ax.barh(summary["genre"], summary["count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
+        coverage = summary.attrs.get("coverage")
+        match coverage:
+            case (int(n_data), int(n_total)) if n_total > 0 and n_data < n_total:
+                missing_frac = 1 - n_data / n_total
+                # Draw a thin grey band along the bottom 4% of the axes,
+                # shading the missing fraction. Uses axes-fraction
+                # transform so it sits independent of the bar y-coords.
+                ax.axhspan(
+                    ymin=-0.05,
+                    ymax=-0.01,
+                    xmin=0.0,
+                    xmax=missing_frac,
+                    facecolor="#999",
+                    alpha=0.6,
+                    transform=ax.get_yaxis_transform(),
+                    clip_on=False,
+                )
+            case _:
+                pass
         _style_axes(ax, self.title, summary)
 
 
