@@ -179,6 +179,78 @@ class SpotifyClient:
         tracks = [Track.from_api(item, artist_by_id) for item in track_items]
         return Playlist.from_api(data, tracks)
 
+    def liked_songs(self, *, force_refresh: bool = False) -> Playlist:
+        """Fetch the authenticated user's saved tracks as a pseudo-Playlist.
+
+        Spotify's "Liked Songs" is not a real playlist — it has no id, no
+        owner, no description. We model it as a synthesized ``Playlist``
+        with ``id="__liked__"`` so the rest of the pipeline (Track parsing,
+        PlaylistAnalyzer, every analyzer) consumes it unchanged.
+
+        Two-phase like ``playlist()``: paginate ``current_user_saved_tracks``
+        (50/page), then batch-fetch unique artists.
+
+        Args:
+            force_refresh: Skip the cache and refetch from the API. The
+                cached blob can be several MB for 3000+ saved tracks; the
+                default 7-day ``FileCache`` TTL applies.
+
+        Returns:
+            A pseudo-Playlist with id ``"__liked__"`` and name ``"Liked Songs"``.
+        """
+        cache_key = "liked/me"
+        cached = None if force_refresh else self.cache.get(cache_key)
+        data: dict[str, Any]
+        if cached is None:
+            first = cast(dict[str, Any], self.sp.current_user_saved_tracks(limit=50))
+            # Convert legacy {"track": ...} → {"item": ...} so the rest of
+            # the pipeline (which reads item["item"]) can consume unchanged.
+            raw_items: list[dict[str, Any]] = list(first["items"])
+            page: dict[str, Any] = first
+            while page.get("next"):
+                page = cast(dict[str, Any], self.sp.next(page))
+                raw_items.extend(page["items"])
+            items: list[dict[str, Any]] = [
+                {
+                    "item": it["track"],
+                    "added_at": it.get("added_at"),
+                    "is_local": False,
+                }
+                for it in raw_items
+                if it.get("track")
+            ]
+            me = cast(dict[str, Any], self.sp.current_user())
+            data = {
+                "id": "__liked__",
+                "name": "Liked Songs",
+                "owner": {"display_name": me.get("display_name", "")},
+                "public": False,
+                "collaborative": False,
+                "description": "",
+                "items": {"items": items},
+            }
+            self.cache.put(cache_key, data)
+        else:
+            data = cached
+            items = data["items"]["items"]
+
+        track_items = [
+            it for it in items if it.get("item") and it["item"].get("type") == "track"
+        ]
+
+        artist_ids: set[str] = set()
+        for item in track_items:
+            for a in item["item"].get("artists", []):
+                if a.get("id"):
+                    artist_ids.add(a["id"])
+
+        artist_by_id: dict[str, Artist] = {
+            a.id: a for a in self.artists(artist_ids, force_refresh=force_refresh)
+        }
+
+        tracks = [Track.from_api(item, artist_by_id) for item in track_items]
+        return Playlist.from_api(data, tracks)
+
     def artists(
         self,
         artist_ids: Iterable[str],
