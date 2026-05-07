@@ -807,7 +807,6 @@ class PlaylistAnalyzer:
                     "name": t.name,
                     "primary_artist_id": primary.id if primary else None,
                     "primary_artist_name": primary.name if primary else "",
-                    "all_artists": " | ".join(a.name for a in t.artists),
                     "artist_ids": [a.id for a in t.artists],
                     "artist_names": [a.name for a in t.artists],
                     "album_name": t.album_name,

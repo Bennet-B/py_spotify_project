@@ -20,7 +20,6 @@ def test_to_parquet_round_trip_preserves_schema(tmp_path: Path) -> None:
                 "name": "Song",
                 "primary_artist_id": "a1",
                 "primary_artist_name": "Alice",
-                "all_artists": "Alice",
                 "artist_ids": ["a1"],
                 "artist_names": ["Alice"],
                 "album_name": "Album",
