@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
@@ -25,9 +25,10 @@ _LOW_COVERAGE_THRESHOLD = 0.7
 _Color = str | tuple[float, float, float]
 
 
-def _get_coverage(summary: pd.DataFrame) -> tuple[int, int] | None:
-    """Read the (n_data, n_total) coverage tuple stamped by Analyzer._attach_coverage, if present."""
-    return cast(tuple[int, int] | None, summary.attrs.get("coverage"))
+def _get_coverage(summary: pd.DataFrame) -> tuple[int, int]:
+    """Return the (n_data, n_total) coverage tuple stamped by Analyzer._attach_coverage, or (0, 0) if absent."""
+    coverage: tuple[int, int] = summary.attrs.get("coverage", (0, 0))
+    return coverage
 
 
 def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
@@ -42,9 +43,8 @@ def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
         summary: The analyze() output. Used to read ``attrs["coverage"]``.
     """
     suffix = ""
-    coverage = _get_coverage(summary)
-    match coverage:
-        case (int(n_data), int(n_total)) if n_total > 0 and n_data < n_total:
+    match _get_coverage(summary):
+        case (n_data, n_total) if n_total > 0 and n_data < n_total:
             pct = n_data / n_total
             suffix = f" ({n_data}/{n_total} tracks, {pct:.0%} coverage)"
         case _:
@@ -193,8 +193,7 @@ class GenreAnalyzer(Analyzer):
         ax.barh(summary["genre"], summary["count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
-        coverage = _get_coverage(summary)
-        match coverage:
+        match _get_coverage(summary):
             case (n_data, n_total) if n_total > 0 and n_data < n_total:
                 missing_frac = 1 - n_data / n_total
                 # Draw a thin grey band just below the axes, with width proportional to the missing fraction.
