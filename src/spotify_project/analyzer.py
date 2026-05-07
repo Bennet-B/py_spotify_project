@@ -531,9 +531,10 @@ class DurationAnalyzer(Analyzer):
 
 
 class TimelineAnalyzer(Analyzer):
-    """Track-addition timeline, grouped by period.
+    """Track-addition timeline grouped by period, based on ``added_at`` timestamps.
 
-    Falls back to ``release_date`` when ``added_at`` is entirely missing — typical for Spotify-curated playlists, whose API responses set ``added_at: null`` on every item.
+    Rows with missing or unparseable ``added_at`` are dropped. Coverage reflects the
+    fraction of tracks that have a valid ``added_at`` value.
 
     Args:
         freq: pandas Period frequency string. Default ``"M"`` (month). ``"Y"`` for yearly, ``"W"`` for weekly. Validated by pandas.
@@ -546,81 +547,42 @@ class TimelineAnalyzer(Analyzer):
         self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
-        """Count rows that will produce a data point in analyze().
-
-        Mirrors analyze()'s source selection: if any ``added_at`` values are present, counts
-        non-null ``added_at`` rows; otherwise counts ``release_date`` values with at least
-        month precision (year-only strings are dropped in analyze() and don't count as covered).
-        """
-        if df.empty:
+        """Count rows with a valid ``added_at`` timestamp."""
+        if df.empty or "added_at" not in df.columns:
             return (0, len(df))
-        added_at_parsed: pd.Series[Any] = pd.to_datetime(df["added_at"], errors="coerce", utc=True) if "added_at" in df.columns else pd.Series(pd.NaT, index=df.index)
-        if not added_at_parsed.isna().all():
-            n_with = int(added_at_parsed.notna().sum())
-        elif "release_date" in df.columns:
-            month_precision: pd.Series[Any] = df["release_date"].astype(str).str.match(r"^\d{4}-\d{2}")
-            n_with = int(month_precision.sum())
-        else:
-            n_with = 0
+        n_with = int(pd.to_datetime(df["added_at"], errors="coerce", utc=True).notna().sum())
         return (n_with, len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Group track additions (or release dates) into time-period buckets.
+        """Group track additions into time-period buckets.
 
-        When falling back to ``release_date``, year-only values (e.g. ``"1979"``) are dropped
-        rather than fabricating a January timestamp. ``YearAnalyzer`` already covers
-        year-level resolution, so no information is lost.
+        Only ``added_at`` is used; rows with a missing or unparseable value are dropped.
 
         Args:
-            df: Track-level DataFrame; must contain ``added_at`` and optionally ``release_date``.
+            df: Track-level DataFrame; must contain ``added_at``.
 
         Returns:
-            DataFrame with columns ``period`` (pandas Period), ``count``, and ``source``
-            (``"added_at"`` or ``"release_date"``, repeated on every row), sorted ascending by period.
+            DataFrame with columns ``period`` (pandas Period) and ``count``, sorted ascending by period.
         """
-        empty = pd.DataFrame({"period": [], "count": [], "source": []})
+        empty = pd.DataFrame({"period": [], "count": []})
         if df.empty:
             return self._attach_coverage(empty, df)
 
-        source_col = "added_at"
         raw: pd.Series[Any] = df["added_at"] if "added_at" in df.columns else pd.Series([], dtype=object)
-        values: pd.Series[Any] = pd.to_datetime(raw, errors="coerce", utc=True)
-        if values.isna().all() and "release_date" in df.columns:
-            source_col = "release_date"
-            # Keep only dates with at least month precision (YYYY-MM…); year-only strings
-            # would convert to Jan 1 and create misleading spikes in the timeline.
-            month_precision_mask: pd.Series[Any] = df["release_date"].astype(str).str.match(r"^\d{4}-\d{2}")
-            values = pd.to_datetime(
-                df["release_date"].astype(str).where(month_precision_mask),
-                errors="coerce",
-                utc=True,
-            )
-        values = values.dropna()
+        values: pd.Series[Any] = pd.to_datetime(raw, errors="coerce", utc=True).dropna()
         if values.empty:
             return self._attach_coverage(empty, df)
         # Strip timezone before to_period — pandas warns otherwise, and the period (month / year / week) is coarse enough that tz is irrelevant.
         periods: pd.Series[Any] = values.dt.tz_localize(None).dt.to_period(self.freq)
         result: pd.DataFrame = periods.value_counts().sort_index().rename_axis("period").reset_index(name="count")
-        result["source"] = source_col
-        n_data, n_total = self.coverage(df)
-        if n_total > 0 and n_data / n_total < 0.70:
-            logger.warning(
-                "TimelineAnalyzer: only %d/%d tracks (%.0f%%) have usable timestamps; "
-                "timeline may appear sparse — year-only release_dates are excluded to avoid "
-                "fabricated January spikes (YearAnalyzer covers year-level breakdown)",
-                n_data,
-                n_total,
-                100 * n_data / n_total,
-            )
-        result.attrs["coverage"] = (n_data, n_total)
-        return result
+        return self._attach_coverage(result, df)
 
     def plot(self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None) -> None:
         """Render an area-style line chart of track additions over time.
 
         Args:
             ax: Matplotlib Axes to draw on.
-            summary: Output of ``analyze``; columns ``period``, ``count``, ``source``.
+            summary: Output of ``analyze``; columns ``period`` and ``count``.
             color: Line/fill color; defaults to the class's ``default_color``.
         """
         c = color if color is not None else self.default_color
@@ -633,9 +595,7 @@ class TimelineAnalyzer(Analyzer):
         ax.plot(x, summary["count"], marker="o", color=c)
         ax.set_xlabel("Time")
         ax.set_ylabel("Tracks added")
-        source_col = str(summary["source"].iloc[0])
-        source_label = "added_at" if source_col == "added_at" else "release_date (fallback)"
-        _style_axes(ax, f"{self.effective_title} (source: {source_label})", summary)
+        _style_axes(ax, self.effective_title, summary)
 
 
 class PlaylistAnalyzer:
