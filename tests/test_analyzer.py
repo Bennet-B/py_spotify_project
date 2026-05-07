@@ -493,10 +493,12 @@ def test_year_analyzer_reports_coverage_via_attrs() -> None:
 
 
 def test_timeline_analyzer_reports_coverage_via_attrs() -> None:
-    """TimelineAnalyzer.analyze counts rows with usable date data.
+    """TimelineAnalyzer.analyze counts rows that actually produce a data point.
 
-    A row contributes to coverage if EITHER added_at OR release_date is
-    parseable.
+    Coverage mirrors analyze()'s source selection: when ANY added_at values are
+    present, coverage counts non-null added_at rows (tracks 1 and 4 here).
+    Track 2 has a release_date but its added_at is null, and since the source
+    chosen is added_at it doesn't count. Track 3 has neither.
     """
     from datetime import datetime
 
@@ -517,8 +519,9 @@ def test_timeline_analyzer_reports_coverage_via_attrs() -> None:
         ]
     )
     summary = TimelineAnalyzer().analyze(df)
-    # Rows 1, 2, 4 contribute (have at least one usable date). Row 3 doesn't.
-    assert summary.attrs["coverage"] == (3, 4)
+    # added_at is the source (non-null for tracks 1 and 4). Track 2's release_date
+    # doesn't count — it's not the active source. Track 3 has neither.
+    assert summary.attrs["coverage"] == (2, 4)
 
 
 def test_timeline_analyzer_coverage_when_added_at_column_absent() -> None:

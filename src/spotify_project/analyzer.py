@@ -4,6 +4,7 @@ from __future__ import annotations
 # matplotlib stubs use `**kwargs: Unknown` on every Axes method (text, bar, barh, set_xlabel, set_ylabel, set_title, invert_yaxis, tight_layout, …).
 # The methods themselves are fully typed; only the pass-through kwargs are Unknown.
 # A per-file disable is the narrowest scope available — there is no per-call-site workaround for `**kwargs: Unknown` propagation.
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar, cast
@@ -15,6 +16,8 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from .models import Playlist
+
+logger = logging.getLogger(__name__)
 
 # A color accepted by Matplotlib: either a CSS hex/name string or an RGB float-triple (0.0–1.0 per channel) as returned by seaborn palettes.
 _Color = str | tuple[float, float, float]
@@ -550,31 +553,41 @@ class TimelineAnalyzer(Analyzer):
         self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
-        """Count rows with EITHER added_at OR release_date parseable."""
+        """Count rows that will produce a data point in analyze().
+
+        Mirrors analyze()'s source selection: if any ``added_at`` values are present, counts
+        non-null ``added_at`` rows; otherwise counts ``release_date`` values with at least
+        month precision (year-only strings are dropped in analyze() and don't count as covered).
+        """
         if df.empty:
             return (0, len(df))
-        added_at_ok: pd.Series[Any] = (
-            pd.to_datetime(df["added_at"], errors="coerce", utc=True).notna()
+        added_at_parsed: pd.Series[Any] = (
+            pd.to_datetime(df["added_at"], errors="coerce", utc=True)
             if "added_at" in df.columns
-            else pd.Series(False, index=df.index)
+            else pd.Series(pd.NaT, index=df.index)
         )
-        release_date_ok: pd.Series[Any] = (
-            pd.to_datetime(df["release_date"].astype(str), errors="coerce", utc=True).notna()
-            if "release_date" in df.columns
-            else pd.Series(False, index=df.index)
-        )
-        n_with = int((added_at_ok | release_date_ok).sum())
+        if not added_at_parsed.isna().all():
+            n_with = int(added_at_parsed.notna().sum())
+        elif "release_date" in df.columns:
+            month_precision: pd.Series[Any] = df["release_date"].astype(str).str.match(r"^\d{4}-\d{2}")
+            n_with = int(month_precision.sum())
+        else:
+            n_with = 0
         return (n_with, len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Group track additions (or release dates) into time-period buckets.
 
+        When falling back to ``release_date``, year-only values (e.g. ``"1979"``) are dropped
+        rather than fabricating a January timestamp. ``YearAnalyzer`` already covers
+        year-level resolution, so no information is lost.
+
         Args:
             df: Track-level DataFrame; must contain ``added_at`` and optionally ``release_date``.
 
         Returns:
-            DataFrame with columns ``period`` (pandas Period), ``count``, and ``source`` (``"added_at"`` or ``"release_date"``, repeated on every row),
-            sorted ascending by period.
+            DataFrame with columns ``period`` (pandas Period), ``count``, and ``source``
+            (``"added_at"`` or ``"release_date"``, repeated on every row), sorted ascending by period.
         """
         empty = pd.DataFrame({"period": [], "count": [], "source": []})
         if df.empty:
@@ -585,7 +598,14 @@ class TimelineAnalyzer(Analyzer):
         values: pd.Series[Any] = pd.to_datetime(raw, errors="coerce", utc=True)
         if values.isna().all() and "release_date" in df.columns:
             source_col = "release_date"
-            values = pd.to_datetime(df["release_date"].astype(str), errors="coerce", utc=True)
+            # Keep only dates with at least month precision (YYYY-MM…); year-only strings
+            # would convert to Jan 1 and create misleading spikes in the timeline.
+            month_precision_mask: pd.Series[Any] = df["release_date"].astype(str).str.match(r"^\d{4}-\d{2}")
+            values = pd.to_datetime(
+                df["release_date"].astype(str).where(month_precision_mask),
+                errors="coerce",
+                utc=True,
+            )
         values = values.dropna()
         if values.empty:
             return self._attach_coverage(empty, df)
@@ -598,7 +618,16 @@ class TimelineAnalyzer(Analyzer):
             .reset_index(name="count")
         )
         result["source"] = source_col
-        return self._attach_coverage(result, df)
+        n_data, n_total = self.coverage(df)
+        if n_total > 0 and n_data / n_total < 0.70:
+            logger.warning(
+                "TimelineAnalyzer: only %d/%d tracks (%.0f%%) have usable timestamps; "
+                "timeline may appear sparse — year-only release_dates are excluded to avoid "
+                "fabricated January spikes (YearAnalyzer covers year-level breakdown)",
+                n_data, n_total, 100 * n_data / n_total,
+            )
+        result.attrs["coverage"] = (n_data, n_total)
+        return result
 
     def plot(self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None) -> None:
         """Render an area-style line chart of track additions over time.
