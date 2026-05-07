@@ -615,12 +615,6 @@ class TimelineAnalyzer(Analyzer):
     typical for Spotify-curated playlists, whose API responses set
     ``added_at: null`` on every item.
 
-    Note:
-        ``_last_source`` is mutated by ``analyze()`` and read by ``plot()``
-        for the chart title annotation. This is a known limitation: the
-        instance is not safe to share across threads or to call ``plot``
-        before ``analyze`` has been called at least once.
-
     Args:
         freq: pandas Period frequency string. Default ``"M"`` (month).
             ``"Y"`` for yearly, ``"W"`` for weekly. Validated by pandas.
@@ -630,9 +624,6 @@ class TimelineAnalyzer(Analyzer):
 
     def __init__(self, freq: str = "M") -> None:
         self.freq = freq
-        # Tracks which column ``analyze`` last used, so ``plot`` can label
-        # the chart correctly. Set in analyze(); read in plot().
-        self._last_source: str = "added_at"
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
         """Count rows with EITHER added_at OR release_date parseable."""
@@ -661,12 +652,12 @@ class TimelineAnalyzer(Analyzer):
                 optionally ``release_date``.
 
         Returns:
-            DataFrame with columns ``period`` (pandas Period) and ``count``,
-            sorted ascending by period.
+            DataFrame with columns ``period`` (pandas Period), ``count``,
+            and ``source`` (``"added_at"`` or ``"release_date"``, repeated
+            on every row), sorted ascending by period.
         """
-        empty = pd.DataFrame({"period": [], "count": []})
+        empty = pd.DataFrame({"period": [], "count": [], "source": []})
         if df.empty:
-            self._last_source = "added_at"
             return self._attach_coverage(empty, df)
 
         source_col = "added_at"
@@ -679,7 +670,6 @@ class TimelineAnalyzer(Analyzer):
             values = pd.to_datetime(
                 df["release_date"].astype(str), errors="coerce", utc=True
             )
-        self._last_source = source_col
 
         values = values.dropna()
         if values.empty:
@@ -694,6 +684,7 @@ class TimelineAnalyzer(Analyzer):
             .rename_axis("period")
             .reset_index(name="count")
         )
+        result["source"] = source_col
         return self._attach_coverage(result, df)
 
     def plot(
@@ -703,7 +694,7 @@ class TimelineAnalyzer(Analyzer):
 
         Args:
             ax: Matplotlib Axes to draw on.
-            summary: Output of ``analyze``; columns ``period`` and ``count``.
+            summary: Output of ``analyze``; columns ``period``, ``count``, ``source``.
             color: Line/fill color; defaults to the class's ``default_color``.
         """
         c = color if color is not None else self.default_color
@@ -716,8 +707,9 @@ class TimelineAnalyzer(Analyzer):
         ax.plot(x, summary["count"], marker="o", color=c)
         ax.set_xlabel("Time")
         ax.set_ylabel("Tracks added")
+        source_col = str(summary["source"].iloc[0])
         source_label = (
-            "added_at" if self._last_source == "added_at" else "release_date (fallback)"
+            "added_at" if source_col == "added_at" else "release_date (fallback)"
         )
         _style_axes(ax, f"{self.title} (source: {source_label})", summary)
 

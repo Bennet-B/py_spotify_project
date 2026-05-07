@@ -366,7 +366,7 @@ def test_timeline_analyzer_groups_added_at_by_month_by_default() -> None:
         ]
     )
     summary = TimelineAnalyzer().analyze(df)
-    assert list(summary.columns) == ["period", "count"]
+    assert list(summary.columns) == ["period", "count", "source"]
     counts = dict(zip(summary["period"].astype(str), summary["count"], strict=True))
     assert counts["2024-01"] == 2
     assert counts["2024-03"] == 1
@@ -406,7 +406,7 @@ def test_timeline_analyzer_returns_empty_when_no_dates_at_all() -> None:
     )
     summary = TimelineAnalyzer().analyze(df)
     assert summary.empty
-    assert list(summary.columns) == ["period", "count"]
+    assert list(summary.columns) == ["period", "count", "source"]
 
 
 def test_analyzer_plot_accepts_color_kwarg() -> None:
@@ -577,3 +577,22 @@ def test_genre_analyzer_plot_draws_band_when_coverage_below_100() -> None:
     patches_full = _patch_count(df_full)
     patches_partial = _patch_count(df_partial)
     assert patches_partial > patches_full
+
+
+def test_timeline_analyzer_summary_includes_source_column() -> None:
+    """TimelineAnalyzer.analyze stamps the source ('added_at' or 'release_date')
+    onto every row of the summary, eliminating the need for instance state."""
+    from datetime import datetime
+
+    df_added_at = _frame(
+        [{"track_id": "1", "added_at": datetime(2024, 1, 1, tzinfo=UTC)}]
+    )
+    summary_added = TimelineAnalyzer().analyze(df_added_at)
+    assert "source" in summary_added.columns
+    assert (summary_added["source"] == "added_at").all()
+
+    df_release = _frame(
+        [{"track_id": "1", "added_at": None, "release_date": "2020-05-01"}]
+    )
+    summary_release = TimelineAnalyzer().analyze(df_release)
+    assert (summary_release["source"] == "release_date").all()
