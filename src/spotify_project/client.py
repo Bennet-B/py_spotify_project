@@ -219,7 +219,7 @@ class SpotifyClient:
                 for it in raw_items
                 if it.get("track")
             ]
-            me = cast(dict[str, Any], self.sp.current_user())
+            me = self.current_user()
             data = {
                 "id": "__liked__",
                 "name": "Liked Songs",
