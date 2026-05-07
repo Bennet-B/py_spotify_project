@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-_log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
@@ -110,7 +110,7 @@ class Track:
             if not aid:
                 continue
             if aid not in artist_by_id:
-                _log.warning("artist %s not in lookup; track may lose primary_artist", aid)
+                logger.warning("artist %s not in lookup; track may lose primary_artist", aid)
                 continue
             resolved.append(artist_by_id[aid])
         added_at_raw = item.get("added_at")

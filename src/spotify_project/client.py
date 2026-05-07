@@ -11,6 +11,14 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
+try:
+    from tqdm import tqdm as _tqdm_cls
+
+    _tqdm_available = True
+except ImportError:
+    _tqdm_cls = None  # type: ignore[assignment]
+    _tqdm_available = False
+
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
@@ -125,6 +133,7 @@ class SpotifyClient:
         cached = None if force_refresh else self.cache.get(cache_key)
         data: dict[str, Any]
         if cached is None:
+            logger.info("Fetching playlist %s from API", playlist_id)
             data = cast(dict[str, Any], self.sp.playlist(playlist_id))
             if not data.get("items"):
                 raise ValueError(f"Playlist {playlist_id} returned no track details.")
@@ -137,10 +146,12 @@ class SpotifyClient:
             data["items"].pop("next", None)
             self.cache.put(cache_key, data)
         else:
+            logger.debug("Cache hit for playlist %s", playlist_id)
             data = cached
             track_items = data["items"]["items"]
 
         track_items = [it for it in track_items if it.get("item") and it["item"].get("type") == "track"]
+        logger.info("Fetching playlist %s (%d tracks)", playlist_id, len(track_items))
 
         artist_ids: set[str] = set()
         for item in track_items:
@@ -172,6 +183,7 @@ class SpotifyClient:
         cached = None if force_refresh else self.cache.get(cache_key)
         data: dict[str, Any]
         if cached is None:
+            logger.info("Fetching liked songs from API")
             first = cast(dict[str, Any], self.sp.current_user_saved_tracks(limit=50))
             # Convert legacy {"track": ...} → {"item": ...} so the rest of the pipeline (which reads item["item"]) can consume unchanged.
             raw_items: list[dict[str, Any]] = list(first["items"])
@@ -198,10 +210,12 @@ class SpotifyClient:
             }
             self.cache.put(cache_key, data)
         else:
+            logger.debug("Cache hit for liked songs")
             data = cached
             items = data["items"]["items"]
 
         track_items = [it for it in items if it.get("item") and it["item"].get("type") == "track"]
+        logger.info("Fetching liked songs (%d tracks)", len(track_items))
 
         artist_ids: set[str] = set()
         for item in track_items:
@@ -229,16 +243,27 @@ class SpotifyClient:
         ids = sorted(set(artist_ids))
         if not ids:
             return []
+        n = len(ids)
+        estimate_s = n * self.ARTIST_FETCH_DELAY_SECONDS
+        logger.info("Fetching %d unique artists (~%.0f s estimate)", n, estimate_s)
         out: list[Artist] = []
-        for artist_id in ids:
+        if _tqdm_available and _tqdm_cls is not None:
+            ids_iter: Iterable[str] = _tqdm_cls(ids, desc="Fetching artists", unit="artist")  # pyright: ignore[reportUnknownVariableType]
+        else:
+            ids_iter = ids
+        for i, artist_id in enumerate(ids_iter):
             cache_key = f"artist/{artist_id}"
             cached = (None if force_refresh else self.cache.get(cache_key, ttl_days=self.ARTIST_CACHE_TTL_DAYS))
             data: dict[str, Any]
             if cached is None:
+                logger.debug("Cache miss — fetching artist %s", artist_id)
                 data = cast(dict[str, Any], self.sp.artist(artist_id))
                 self.cache.put(cache_key, data)
                 time.sleep(self.ARTIST_FETCH_DELAY_SECONDS)
+                if not _tqdm_available and (i + 1) % 50 == 0:
+                    logger.info("  … %d/%d artists fetched", i + 1, n)
             else:
+                logger.debug("Cache hit for artist %s", artist_id)
                 data = cached
             out.append(Artist.from_api(data))
         return out
