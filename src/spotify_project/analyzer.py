@@ -760,6 +760,10 @@ class PlaylistAnalyzer:
             else [
                 GenreAnalyzer(),
                 YearAnalyzer(),
+                ArtistAnalyzer(),
+                PopularityAnalyzer(),
+                DurationAnalyzer(),
+                TimelineAnalyzer(),
             ]
         )
         # Reject duplicate titles loudly: run_all keys results by title
