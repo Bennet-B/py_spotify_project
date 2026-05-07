@@ -122,13 +122,7 @@ class Analyzer(ABC):
         """
         n_data, n_total = self.coverage(df)
         if n_total > 0 and n_data / n_total < _LOW_COVERAGE_THRESHOLD:
-            logger.warning(
-                "%s: low coverage %d/%d (%.0f%%)",
-                self.effective_title,
-                n_data,
-                n_total,
-                100 * n_data / n_total,
-            )
+            logger.warning("%s: low coverage %d/%d (%.0f%%)", self.effective_title, n_data, n_total, 100 * n_data / n_total)
         summary.attrs["coverage"] = (n_data, n_total)
         return summary
 

@@ -116,8 +116,7 @@ class SpotifyClient:
     def fetch_user_playlists(self) -> list[PlaylistSummary]:
         """List the authenticated user's playlists.
 
-        Filters out ``None`` slots in the API response (Spotify occasionally returns
-        null entries for deleted or inaccessible playlists).
+        Filters out ``None`` slots in the API response (Spotify occasionally returns null entries for deleted or inaccessible playlists).
 
         Returns:
             List of ``PlaylistSummary`` objects, one per playlist.
@@ -212,8 +211,7 @@ class SpotifyClient:
                     "added_at": it.get("added_at"),
                     "is_local": False,
                 }
-                for it in raw_items
-                if it.get("track")
+                for it in raw_items if it.get("track")
             ]
             data = {
                 "id": "__liked__",
@@ -237,12 +235,10 @@ class SpotifyClient:
         """Filter to audio tracks, resolve artist lookups, and return Track objects.
 
         Extracts the common enrichment pipeline shared by ``fetch_playlist()`` and ``fetch_liked_songs()``:
-        filter items to audio tracks, collect unique artist IDs, batch-fetch via ``fetch_artists()``,
-        then construct Track objects with full Artist references.
+        filter items to audio tracks, collect unique artist IDs, batch-fetch via ``fetch_artists()``, then construct Track objects with full Artist references.
 
         Args:
-            track_items: Raw playlist-item dicts using the ``item`` key schema (both native playlist
-                items and the normalized liked-songs items share this shape).
+            track_items: Raw playlist-item dicts using the ``item`` key schema (both native playlist items and the normalized liked-songs items share this shape).
             force_refresh: Passed through to ``fetch_artists()``.
 
         Returns:
