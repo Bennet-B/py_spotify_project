@@ -5,6 +5,10 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+# src/spotify_project/cache.py → parents[0] = src/spotify_project, parents[1] = src, parents[2] = repo root
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CACHE_DIR = _PROJECT_ROOT / ".cache"
+
 
 class FileCache:
     """File-based cache for Spotify API responses.
@@ -13,13 +17,17 @@ class FileCache:
     A cached entry is fresh if the file's mtime is within ``ttl_days``.
     Slashes in keys create subdirectories; keep keys filesystem-safe.
 
+    The default ``root`` is ``<repo-root>/.cache`` (resolved relative to this file,
+    not to CWD), so notebooks and scripts share the same cache regardless of working directory.
+    Pass an explicit ``root`` (e.g. ``tmp_path`` in tests) to override.
+
     Attributes:
         root: Directory where cache files are stored.
         ttl_days: How long a cached value stays valid, in days.
     """
 
-    def __init__(self, root: Path, ttl_days: float = 7.0) -> None:
-        self.root = root
+    def __init__(self, root: Path | None = None, ttl_days: float = 7.0) -> None:
+        self.root = root if root is not None else DEFAULT_CACHE_DIR
         self.ttl_days = ttl_days
         self.root.mkdir(parents=True, exist_ok=True)
 
