@@ -150,18 +150,7 @@ class SpotifyClient:
             data = cached
             track_items = data["items"]["items"]
 
-        track_items = [it for it in track_items if it.get("item") and it["item"].get("type") == "track"]
-        logger.info("Fetching playlist %s (%d tracks)", playlist_id, len(track_items))
-
-        artist_ids: set[str] = set()
-        for item in track_items:
-            for a in item["item"].get("artists", []):
-                if a.get("id"):
-                    artist_ids.add(a["id"])
-
-        artist_by_id: dict[str, Artist] = {a.id: a for a in self.artists(artist_ids, force_refresh=force_refresh)}
-
-        tracks = [Track.from_api(item, artist_by_id) for item in track_items]
+        tracks = self._enrich_with_artists(track_items, force_refresh=force_refresh)
         return Playlist.from_api(data, tracks)
 
     def liked_songs(self, *, force_refresh: bool = False) -> Playlist:
@@ -214,21 +203,35 @@ class SpotifyClient:
             data = cached
             items = data["items"]["items"]
 
-        track_items = [it for it in items if it.get("item") and it["item"].get("type") == "track"]
-        logger.info("Fetching liked songs (%d tracks)", len(track_items))
+        tracks = self._enrich_with_artists(items, force_refresh=force_refresh)
+        return Playlist.from_api(data, tracks)
 
+    def _enrich_with_artists(self, track_items: list[dict[str, Any]], *, force_refresh: bool = False) -> list[Track]:
+        """Filter to audio tracks, resolve artist lookups, and return Track objects.
+
+        Extracts the common enrichment pipeline shared by ``playlist()`` and ``liked_songs()``:
+        filter items to audio tracks, collect unique artist IDs, batch-fetch via ``artists()``,
+        then construct Track objects with full Artist references.
+
+        Args:
+            track_items: Raw playlist-item dicts using the ``item`` key schema (both native playlist
+                items and the normalized liked-songs items share this shape).
+            force_refresh: Passed through to ``artists()``.
+
+        Returns:
+            List of fully-enriched Track objects (podcast episodes and local-file items dropped).
+        """
+        audio_tracks = [it for it in track_items if it.get("item") and it["item"].get("type") == "track"]
+        logger.info("Enriching %d tracks with artist data", len(audio_tracks))
         artist_ids: set[str] = set()
-        for item in track_items:
+        for item in audio_tracks:
             for a in item["item"].get("artists", []):
                 if a.get("id"):
                     artist_ids.add(a["id"])
-
         artist_by_id: dict[str, Artist] = {a.id: a for a in self.artists(artist_ids, force_refresh=force_refresh)}
+        return [Track.from_api(item, artist_by_id) for item in audio_tracks]
 
-        tracks = [Track.from_api(item, artist_by_id) for item in track_items]
-        return Playlist.from_api(data, tracks)
-
-    def artists(self, artist_ids: Iterable[str], *,force_refresh: bool = False) -> list[Artist]:
+    def artists(self, artist_ids: Iterable[str], *, force_refresh: bool = False) -> list[Artist]:
         """Fetch artists by ID, one call per artist.
 
         Spotify removed the batch ``GET /artists?ids=...`` endpoint in February 2026 (403 Forbidden for new apps). The only path now is single-artist ``GET /artists/{id}``. Each result is cached individually under ``artist/<id>``, so a refresh of the same playlist hits the cache instead of the API.
