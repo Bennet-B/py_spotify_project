@@ -11,10 +11,9 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
-from tqdm import tqdm as _tqdm_cls
-
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from tqdm import tqdm as _tqdm_cls
 
 from .cache import FileCache
 from .models import Artist, Playlist, PlaylistSummary, Track, User
@@ -132,6 +131,7 @@ class SpotifyClient:
                 id=str(p.get("id") or ""),
                 name=str(p.get("name") or ""),
                 owner_name=str((p.get("owner") or {}).get("display_name") or ""),  # pyright: ignore[reportUnknownArgumentType]
+                # Spotify renamed tracks → items in Feb 2026
                 track_count=int((p.get("items") or {}).get("total", 0)),  # pyright: ignore[reportUnknownArgumentType]
                 public=bool(p.get("public", False)),
             )
