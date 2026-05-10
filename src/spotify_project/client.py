@@ -207,10 +207,12 @@ class SpotifyClient:
             first = cast(dict[str, Any], self.sp.current_user_saved_tracks(limit=50))
             # Convert legacy {"track": ...} → {"item": ...} so the rest of the pipeline (which reads item["item"]) can consume unchanged.
             raw_items: list[dict[str, Any]] = list(first["items"])
+            dropped = sum(1 for it in first["items"] if it.get("track") is None)
             page: dict[str, Any] = first
             while page.get("next"):
                 page = cast(dict[str, Any], self.sp.next(page))
                 raw_items.extend(page["items"])
+                dropped += sum(1 for it in page["items"] if it.get("track") is None)
             items: list[dict[str, Any]] = [
                 {
                     "item": it["track"],
@@ -219,6 +221,8 @@ class SpotifyClient:
                 }
                 for it in raw_items if it.get("track")
             ]
+            if dropped > 0:
+                logger.info("Dropped %d null tracks from liked songs", dropped)
             data = {
                 "id": "__liked__",
                 "name": "Liked Songs",
