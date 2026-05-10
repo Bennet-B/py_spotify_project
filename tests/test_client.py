@@ -166,6 +166,65 @@ def test_artists_uses_long_ttl_for_cached_entries(tmp_path: Path) -> None:
     assert artists[0].name == "Alice"
 
 
+def test_fetch_current_user_returns_user(tmp_path: Path) -> None:
+    """fetch_current_user maps id/display_name/email from the API response."""
+    fake_sp = MagicMock()
+    fake_sp.current_user.return_value = {"id": "u1", "display_name": "Bennet", "email": "b@example.com"}
+    client = SpotifyClient(sp=fake_sp, cache=FileCache(root=tmp_path))
+    user = client.fetch_current_user()
+    assert user.id == "u1"
+    assert user.display_name == "Bennet"
+    assert user.email == "b@example.com"
+
+
+def test_fetch_current_user_null_display_name(tmp_path: Path) -> None:
+    """fetch_current_user coerces display_name: null to empty string."""
+    fake_sp = MagicMock()
+    fake_sp.current_user.return_value = {"id": "u1", "display_name": None}
+    client = SpotifyClient(sp=fake_sp, cache=FileCache(root=tmp_path))
+    user = client.fetch_current_user()
+    assert user.display_name == ""
+
+
+def test_fetch_current_user_missing_id_raises(tmp_path: Path) -> None:
+    """fetch_current_user raises RuntimeError when the API returns no id (auth failure)."""
+    fake_sp = MagicMock()
+    fake_sp.current_user.return_value = {"display_name": "Bennet"}
+    client = SpotifyClient(sp=fake_sp, cache=FileCache(root=tmp_path))
+    with pytest.raises(RuntimeError, match="no id"):
+        client.fetch_current_user()
+
+
+def _playlist_summary_item(idx: int, track_count: int = 5) -> dict[str, Any]:
+    """Build a spotipy current_user_playlists item."""
+    return {
+        "id": f"pl{idx}",
+        "name": f"Playlist {idx}",
+        "owner": {"display_name": "Bennet"},
+        "items": {"total": track_count},
+        "public": True,
+    }
+
+
+def test_fetch_user_playlists_paginates(tmp_path: Path) -> None:
+    """fetch_user_playlists concatenates pages and returns one PlaylistSummary per playlist."""
+    fake_sp = MagicMock()
+    fake_sp.current_user_playlists.return_value = {
+        "items": [_playlist_summary_item(i) for i in range(3)],
+        "next": "next_url",
+    }
+    fake_sp.next.return_value = {
+        "items": [_playlist_summary_item(i) for i in range(3, 5)],
+        "next": None,
+    }
+    client = SpotifyClient(sp=fake_sp, cache=FileCache(root=tmp_path))
+    summaries = client.fetch_user_playlists()
+    assert len(summaries) == 5
+    assert summaries[0].id == "pl0"
+    assert summaries[0].track_count == 5
+    assert summaries[4].id == "pl4"
+
+
 def test_artists_throttles_between_uncached_fetches(tmp_path: Path) -> None:
     """fetch_artists() sleeps after each real API call (cache hits skip the sleep).
 

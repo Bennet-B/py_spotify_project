@@ -5,7 +5,29 @@ from typing import Any
 
 import pytest
 
-from spotify_project.models import Artist, Track
+from spotify_project.models import Artist, PlaylistSummary, Track, User
+
+
+def test_user_fields() -> None:
+    """User stores id, display_name, and optional email."""
+    u = User(id="abc", display_name="Bennet", email="b@example.com")
+    assert u.id == "abc"
+    assert u.display_name == "Bennet"
+    assert u.email == "b@example.com"
+
+
+def test_user_email_optional() -> None:
+    """User.email may be None (scope not granted)."""
+    u = User(id="abc", display_name="Bennet", email=None)
+    assert u.email is None
+
+
+def test_playlist_summary_fields() -> None:
+    """PlaylistSummary stores all listing fields."""
+    ps = PlaylistSummary(id="pl1", name="Chill", owner_name="Bennet", track_count=42, public=True)
+    assert ps.id == "pl1"
+    assert ps.track_count == 42
+    assert ps.public is True
 
 
 def test_artist_popularity_out_of_range_raises() -> None:
