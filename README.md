@@ -169,7 +169,7 @@ The current `SpotifyClient` is synchronous. This is intentional for Phase 1: `sp
 
 The calculation changes in a web UI: with multiple users hitting the server simultaneously, one user's slow artist fetch should not block another user's request. That's the point at which `async` pays off.
 
-The architecture is already laid out to make migration straightforward. `SpotifyClient` is cleanly separated from `models.py` (which is pure Python dataclasses) and `analyzer.py` (which is pure pandas). An async `AsyncSpotifyClient` can be a drop-in replacement that exposes the same `playlist()` / `liked_songs()` / `artists()` interface — nothing in the analyzer layer would need to change.
+The architecture is already laid out to make migration straightforward. `SpotifyClient` is cleanly separated from `models.py` (which is pure Python dataclasses) and `analyzer.py` (which is pure pandas). An async `AsyncSpotifyClient` can be a drop-in replacement that exposes the same `fetch_playlist()` / `fetch_liked_songs()` / `fetch_user_playlists()` interface — nothing in the analyzer layer would need to change.
 
 ### Web UI framework
 

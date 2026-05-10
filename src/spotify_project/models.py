@@ -97,7 +97,7 @@ class Track:
 
         Args:
             item: A spotipy playlist-item dict (with keys ``track``, ``added_at``, ``is_local``).
-            artist_by_id: Lookup of fully-fetched Artist objects, populated by ``SpotifyClient.playlist``.
+            artist_by_id: Lookup of fully-fetched Artist objects, populated by ``SpotifyClient.fetch_playlist``.
 
         Returns:
             The constructed Track. Tracks whose ``item.type`` is not ``"track"`` (e.g. podcast episodes) should be filtered out by the caller before this is called.
