@@ -144,7 +144,7 @@ All tests should pass.
 
 - `src/spotify_project/cache.py` — `FileCache`, a simple file-based JSON cache with TTL
 - `src/spotify_project/client.py` — `SpotifyClient`, OAuth + API access via `spotipy` (playlists, liked songs, artists)
-- `src/spotify_project/models.py` — `Track`, `Playlist`, `Artist` (frozen dataclasses)
+- `src/spotify_project/models.py` — `Track`, `Playlist`, `Artist`, `User`, `PlaylistSummary` (frozen dataclasses)
 - `src/spotify_project/analyzer.py` — `Analyzer` ABC + six concrete analyzers (Genre, Year, Artist, Popularity, Duration, Timeline) + `PlaylistAnalyzer` orchestrator. Includes plotting.
 - `tests/` — pytest unit tests (42)
 - `notebooks/01_explore_playlist.ipynb` — demo notebook
