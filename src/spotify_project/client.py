@@ -251,6 +251,9 @@ class SpotifyClient:
             List of fully-enriched Track objects (podcast episodes and local-file items dropped).
         """
         audio_tracks = [it for it in track_items if it.get("item") and it["item"].get("type") == "track"]
+        dropped = len(track_items) - len(audio_tracks)
+        if dropped > 0:
+            logger.info("Dropped %d non-track items (podcasts, local files, etc.)", dropped)
         logger.info("Enriching %d tracks with artist data", len(audio_tracks))
         artist_ids: set[str] = set()
         for item in audio_tracks:
