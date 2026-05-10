@@ -32,7 +32,7 @@ def _get_coverage(summary: pd.DataFrame) -> tuple[int, int]:
 
 
 def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
-    """Apply the Sprint C consistent style + coverage suffix to an Axes.
+    """Apply a consistent style and coverage suffix to an Axes.
 
     Reads ``summary.attrs["coverage"]`` (a ``(n_data, n_total)`` tuple attached by ``Analyzer._attach_coverage``);
     when present and < 100%, appends a coverage suffix to the title.
