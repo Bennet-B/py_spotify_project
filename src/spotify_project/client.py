@@ -13,7 +13,7 @@ from typing import Any, ClassVar, cast
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from tqdm import tqdm as _tqdm_cls
+from tqdm.auto import tqdm as _tqdm_cls
 
 from .cache import FileCache
 from .models import Artist, Playlist, PlaylistSummary, Track, User
