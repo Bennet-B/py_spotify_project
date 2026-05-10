@@ -138,7 +138,7 @@ See `pyproject.toml` for tooling configuration.
 .venv/bin/python -m pytest -q                  # macOS / Linux
 ```
 
-Expected: 42 tests pass.
+All tests should pass.
 
 ## Modules
 
