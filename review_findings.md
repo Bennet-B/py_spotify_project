@@ -4,28 +4,8 @@
 
 **How to use this file:** check off items as you fix them. If you disagree with a finding, strike it through and add a one-line note on why — that's a useful artifact when explaining "why we left this" later.
 
----
-
-## 🔴 Critical — correctness bugs
-
-
-### ~~B4. `analyzer.py:30` — type-narrowing was dropped from `_get_coverage`~~
-
-~~The 84d0b5f cleanup replaced `cast(tuple[int, int] | None, summary.attrs.get("coverage"))` with~~...
-
-**Won't fix.** The `case (n_data, n_total) if n_total > 0 ...` / `case _: pass` pattern is safe: any non-sequence value hits `case _` with no crash. The `(0, 0)` default removes the `None`-propagation burden from callers. Cleaner than the old cast approach. — *dismissed*
-
----
 
 ## 🟡 Important — quality, drift, missing tests
-
-### ~~I1. `pyproject.toml:15, 25` — Python target is **3.14** (doesn't exist yet)~~
-
-**Won't fix.** Python 3.14 is installed and running. `py314` is correct. — *dismissed*
-
-### ~~I2. `pyproject.toml:14` — line length is **188**, global rule is **88**~~
-
-**Fixed differently.** 188 is the intended limit. Updated `~/.claude/rules/python-style.md` to match. No project-level deviation to document. — *resolved*
 
 ### I3. README + docstring drift after the `fetch_*` rename
 
@@ -64,11 +44,7 @@ The only behavior change in 4599a4f ships untested. Easy edge case: Spotify retu
 
 ### I8. `client.py:135` `track_count` parsing has a fragile `items or tracks` fallback
 
-`int((p.get("items") or p.get("tracks") or {}).get("total", 0))` — the listing endpoint returns `tracks: {...}`, never `items`. The fallback works only because `p.get("items")` returns `None`.
-
-**Fix:** tighten to a single explicit shape: `tracks_field = p.get("tracks") or {}`. If Spotify ever changes the shape, fail loud.
-
-- [ ] Done
+- [x] Done — dropped `tracks` fallback; new app/new cache means legacy shape never appears. `items` only.
 
 ### I9. "Sprint C" references rot
 
