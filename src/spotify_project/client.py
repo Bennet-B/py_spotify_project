@@ -125,9 +125,14 @@ class SpotifyClient:
         """
         results = cast(dict[str, Any], self.sp.current_user_playlists())
         raw: list[dict[str, Any]] = [p for p in results["items"] if p is not None]
+        dropped = len(results["items"]) - len(raw)
         while results.get("next"):
             results = cast(dict[str, Any], self.sp.next(results))
-            raw.extend(p for p in results["items"] if p is not None)
+            batch = [p for p in results["items"] if p is not None]
+            dropped += len(results["items"]) - len(batch)
+            raw.extend(batch)
+        if dropped > 0:
+            logger.info("Dropped %d deleted/inaccessible playlists", dropped)
         return [
             PlaylistSummary(
                 id=str(p.get("id") or ""),
