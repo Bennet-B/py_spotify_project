@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any, cast
+
+logger = logging.getLogger(__name__)
 
 # src/spotify_project/cache.py → parents[0] = src/spotify_project, parents[1] = src, parents[2] = repo root
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -48,7 +51,11 @@ class FileCache:
         age_seconds = time.time() - path.stat().st_mtime
         if age_seconds > effective_ttl * 86_400:
             return None
-        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+        try:
+            return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Corrupted cache entry %s: %s; treating as miss", key, e)
+            return None
 
     def put(self, key: str, value: dict[str, Any]) -> None:
         """Write ``value`` to disk under ``key``.

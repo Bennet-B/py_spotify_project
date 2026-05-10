@@ -16,7 +16,7 @@ try:
 
     _tqdm_available = True
 except ImportError:
-    _tqdm_cls = None  # type: ignore[assignment]
+    _tqdm_cls = None  # pyright: ignore[reportAssignmentType]
     _tqdm_available = False
 
 import spotipy
@@ -107,8 +107,12 @@ class SpotifyClient:
             Parsed ``User`` with id, display_name, and email (None if scope not granted).
         """
         data = cast(dict[str, Any], self.sp.current_user())
+        if not data.get("id"):
+            raise RuntimeError(
+                f"Spotify returned a user payload with no id; check token validity. Keys: {list(data.keys())}"
+            )
         return User(
-            id=data.get("id", "") or "",
+            id=data["id"],
             display_name=data.get("display_name", "") or "",
             email=data.get("email"),
         )
@@ -158,7 +162,7 @@ class SpotifyClient:
         if cached is None:
             logger.info("Fetching playlist %s from API", playlist_id)
             data = cast(dict[str, Any], self.sp.playlist(playlist_id))
-            if not data.get("items"):
+            if "items" not in data and "tracks" not in data:
                 owner_name = data.get("owner", {}).get("display_name", "<unknown>")
                 playlist_name = data.get("name", "<unknown>")
                 raise ValueError(f"Playlist {playlist_id} [Owner: {owner_name}, Name: {playlist_name}] returned no track details.")

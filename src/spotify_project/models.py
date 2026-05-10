@@ -114,7 +114,12 @@ class Track:
                 continue
             resolved.append(artist_by_id[aid])
         added_at_raw = item.get("added_at")
-        added_at = datetime.fromisoformat(added_at_raw) if added_at_raw else None
+        added_at: datetime | None = None
+        if added_at_raw:
+            try:
+                added_at = datetime.fromisoformat(added_at_raw)
+            except ValueError:
+                logger.warning("Unparseable added_at %r for track %s", added_at_raw, track_data.get("id", "<unknown>"))
         return cls(
             id=track_data.get("id"),
             name=track_data.get("name", ""),
