@@ -20,7 +20,7 @@ class FileCache:
     A cached entry is fresh if the file's mtime is within ``ttl_days``.
     Slashes in keys create subdirectories; keep keys filesystem-safe.
 
-    The default ``root`` is ``<repo-root>/.cache`` (resolved relative to this file, not to CWD), so notebooks and scripts share the same cache regardless of working directory.
+    The default ``root`` is ``<repo-root>/.cache/api`` (resolved relative to this file, not to CWD), so notebooks and scripts share the same cache regardless of working directory.
     Pass an explicit ``root`` (e.g. ``tmp_path`` in tests) to override. TTL is the default; individual ``get()`` calls can override it per-call with the ``ttl_days`` parameter.
 
     Attributes:
