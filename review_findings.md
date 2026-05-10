@@ -2,102 +2,30 @@
 
 **Source:** Three review agents (general code review, comment+docstring audit, silent-failure hunt) run on the diff after the Sonnet+Haiku handoffs and your manual touchups.
 
-**Status:** S1 (OAuth token + PII leak in notebook) handled separately in-session. Everything else here for later review.
-
 **How to use this file:** check off items as you fix them. If you disagree with a finding, strike it through and add a one-line note on why — that's a useful artifact when explaining "why we left this" later.
 
 ---
 
 ## 🔴 Critical — correctness bugs
 
-### B1. `cache.py:33-51` — JSON corruption crashes the whole analysis
 
-`json.loads(path.read_text(...))` is unguarded. A truncated/corrupted cache file (kill -9 mid-write, AV scan, OneDrive sync conflict on Windows) raises straight to the caller and aborts the analysis with a confusing `JSONDecodeError`.
+### ~~B4. `analyzer.py:30` — type-narrowing was dropped from `_get_coverage`~~
 
-**Fix:** wrap in `try/except (json.JSONDecodeError, OSError)`, log `logger.warning("Corrupted cache entry %s: %s; treating as miss", key, e)`, return `None`. This is exactly the "live unhappy path" your `feedback_no_untestable_code` memory endorses.
+~~The 84d0b5f cleanup replaced `cast(tuple[int, int] | None, summary.attrs.get("coverage"))` with~~...
 
-- [x] Done
-
-### B2. `client.py:161-164` — `fetch_playlist` raises on legitimately empty playlists
-
-```python
-if not data.get("items"):
-    raise ValueError(f"Playlist {playlist_id} [...] returned no track details.")
-```
-
-A playlist with **zero tracks** (a valid user state) hits this branch and raises. The check should be "key missing", not "key falsy". Also asymmetric: only `items` checked, but `fetch_user_playlists` accepts both `items` and `tracks` shapes.
-
-**Fix:** raise only on `if "items" not in data and "tracks" not in data:`; an empty list of items should produce an empty `Playlist`.
-
-- [x] Done
-
-### B3. `models.py:117` — `datetime.fromisoformat` aborts the whole playlist on one bad row
-
-A single malformed `added_at` raises `ValueError` and breaks the entire `Track.from_api` chain, taking the whole playlist with it. No log, no skip.
-
-**Fix:** `try/except ValueError`, log `logger.warning("Unparseable added_at %r for track %s", added_at_raw, ...)`, set `added_at = None`.
-
-- [x] Done
-
-### B4. `analyzer.py:30` — type-narrowing was dropped from `_get_coverage`
-
-The 84d0b5f cleanup replaced `cast(tuple[int, int] | None, summary.attrs.get("coverage"))` with:
-
-```python
-coverage: tuple[int, int] = summary.attrs.get("coverage", (0, 0))
-return coverage
-```
-
-`summary.attrs` is `dict[Hashable, Any]` — the annotation is a lie at runtime. Combined with the simultaneous loosening of the match-case from `case (int(n_data), int(n_total))` to `case (n_data, n_total)` (analyzer.py:47), any non-tuple value silently slips through and crashes downstream.
-
-**Fix:** restore the `cast(...)` on read OR re-add the `int(...)` runtime narrowing in the match cases. The prior pattern was strictly safer. Pick one:
-- `coverage = cast(tuple[int, int] | None, summary.attrs.get("coverage"))` → callers handle None
-- Keep current return but restore `case (int(n_data), int(n_total))` on every match site
-
-- [ ] Done
-
-### B5. `client.py:19` — `# type: ignore[assignment]` is mypy syntax in a pyright project
-
-This comment does **nothing** in this repo (project uses pyright, per global rule). It's silently disabled noise.
-
-**Fix:** Replace with `# pyright: ignore[reportAssignmentType]` or — better — fix the type properly: `_tqdm_cls: type[tqdm[str]] | None`.
-
-- [x] Done
-
-### B6. `client.py:109-114` — `fetch_current_user` silently coerces missing id/email to `""`
-
-```python
-id=data.get("id", "") or "",
-display_name=data.get("display_name", "") or "",
-```
-
-A `User(id="", display_name="")` is structurally broken and breaks downstream with no clue why. Missing `id` from `current_user()` means an auth failure — fail loud.
-
-**Fix:** `if not data.get("id"): raise RuntimeError(f"Spotify returned a user payload with no id; check token validity. Keys: {list(data.keys())}")`.
-
-- [x] Done
+**Won't fix.** The `case (n_data, n_total) if n_total > 0 ...` / `case _: pass` pattern is safe: any non-sequence value hits `case _` with no crash. The `(0, 0)` default removes the `None`-propagation burden from callers. Cleaner than the old cast approach. — *dismissed*
 
 ---
 
 ## 🟡 Important — quality, drift, missing tests
 
-### I1. `pyproject.toml:15, 25` — Python target is **3.14** (doesn't exist yet)
+### ~~I1. `pyproject.toml:15, 25` — Python target is **3.14** (doesn't exist yet)~~
 
-`target-version = "py314"` and `pythonVersion = "3.14"`. 3.14 ships Oct 2026. CLAUDE.md says "Python 3.11+". Pick a real version.
+**Won't fix.** Python 3.14 is installed and running. `py314` is correct. — *dismissed*
 
-**Fix:** `py311` (project minimum) or `py312` if you want newer match-syntax. Silently changes ruff lint behavior right now.
+### ~~I2. `pyproject.toml:14` — line length is **188**, global rule is **88**~~
 
-- [ ] Done
-
-### I2. `pyproject.toml:14` — line length is **188**, global rule is **88**
-
-Your manual touchups (2c6abf3) collapsed wrapped lines into >88-char one-liners that pass only because of the loose setting. Right now `~/.claude/rules/python-style.md` and the project disagree.
-
-**Fix:** decide one of:
-- Tighten to 88 + run `ruff format`
-- Document the 188 deviation in `CLAUDE.md` with a reason
-
-- [ ] Done
+**Fixed differently.** 188 is the intended limit. Updated `~/.claude/rules/python-style.md` to match. No project-level deviation to document. — *resolved*
 
 ### I3. README + docstring drift after the `fetch_*` rename
 
