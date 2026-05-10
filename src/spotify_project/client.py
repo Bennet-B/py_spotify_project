@@ -282,7 +282,7 @@ class SpotifyClient:
         logger.info("Fetching %d unique artists (~%.0f s estimate)", n, estimate_s)
         out: list[Artist] = []
         ids_iter: Iterable[str] = _tqdm_cls(ids, desc="Fetching artists", unit="artist")  # pyright: ignore[reportUnknownVariableType]
-        for i, artist_id in enumerate(ids_iter):
+        for artist_id in ids_iter:
             cache_key = f"artist/{artist_id}"
             cached = None if force_refresh else self.cache.get(cache_key, ttl_days=self.ARTIST_CACHE_TTL_DAYS)
             data: dict[str, Any]
