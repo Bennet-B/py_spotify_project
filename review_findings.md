@@ -34,14 +34,6 @@ Actual default is `<repo-root>/.cache/api`. Trivial one-word fix.
 
 - [ ] Done
 
-### I7. No tests for `User`, `PlaylistSummary`, `fetch_current_user`, `fetch_user_playlists`
-
-- [x] Done — 7 new tests: User fields, optional email, PlaylistSummary fields, fetch_current_user happy path + null display_name + missing-id raises, fetch_user_playlists pagination.
-
-### I8. `client.py:135` `track_count` parsing has a fragile `items or tracks` fallback
-
-- [x] Done — dropped `tracks` fallback; new app/new cache means legacy shape never appears. `items` only.
-
 ### I9. "Sprint C" references rot
 
 - `analyzer.py:36` — `"""Apply the Sprint C consistent style + coverage suffix to an Axes."""`

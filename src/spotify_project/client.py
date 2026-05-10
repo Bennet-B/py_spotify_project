@@ -11,13 +11,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
-try:
-    from tqdm import tqdm as _tqdm_cls
-
-    _tqdm_available = True
-except ImportError:
-    _tqdm_cls = None  # pyright: ignore[reportAssignmentType]
-    _tqdm_available = False
+from tqdm import tqdm as _tqdm_cls
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -287,10 +281,7 @@ class SpotifyClient:
         estimate_s = n * self.ARTIST_FETCH_DELAY_SECONDS
         logger.info("Fetching %d unique artists (~%.0f s estimate)", n, estimate_s)
         out: list[Artist] = []
-        if _tqdm_available and _tqdm_cls is not None:
-            ids_iter: Iterable[str] = _tqdm_cls(ids, desc="Fetching artists", unit="artist")  # pyright: ignore[reportUnknownVariableType]
-        else:
-            ids_iter = ids
+        ids_iter: Iterable[str] = _tqdm_cls(ids, desc="Fetching artists", unit="artist")  # pyright: ignore[reportUnknownVariableType]
         for i, artist_id in enumerate(ids_iter):
             cache_key = f"artist/{artist_id}"
             cached = None if force_refresh else self.cache.get(cache_key, ttl_days=self.ARTIST_CACHE_TTL_DAYS)
@@ -300,8 +291,6 @@ class SpotifyClient:
                 data = cast(dict[str, Any], self.sp.artist(artist_id))
                 self.cache.put(cache_key, data)
                 time.sleep(self.ARTIST_FETCH_DELAY_SECONDS)
-                if not _tqdm_available and (i + 1) % 50 == 0:
-                    logger.info("  … %d/%d artists fetched", i + 1, n)
             else:
                 logger.debug("Cache hit for artist %s", artist_id)
                 data = cached
