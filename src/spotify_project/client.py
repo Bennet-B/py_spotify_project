@@ -133,8 +133,7 @@ class SpotifyClient:
                 id=str(p.get("id") or ""),
                 name=str(p.get("name") or ""),
                 owner_name=str((p.get("owner") or {}).get("display_name") or ""),  # pyright: ignore[reportUnknownArgumentType]
-                # Spotify renamed tracks → items in Feb 2026; handle both for cached responses.
-                track_count=int((p.get("items") or p.get("tracks") or {}).get("total", 0)),  # pyright: ignore[reportUnknownArgumentType]
+                track_count=int((p.get("items") or {}).get("total", 0)),  # pyright: ignore[reportUnknownArgumentType]
                 public=bool(p.get("public", False)),
             )
             for p in raw
