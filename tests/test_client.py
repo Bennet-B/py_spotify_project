@@ -20,7 +20,6 @@ def _track_item(idx: int, artist_id: str = "a1") -> dict[str, Any]:
             "artists": [{"id": artist_id, "name": "Artist 1"}],
             "album": {"name": "Album", "release_date": "2020-01-01"},
             "duration_ms": 200_000,
-            "popularity": 50,
             "explicit": False,
         },
         "added_at": "2024-06-01T00:00:00Z",
@@ -52,7 +51,6 @@ def test_playlist_paginates_and_enriches_artists(tmp_path: Path) -> None:
         "id": "a1",
         "name": "Artist 1",
         "genres": ["rock", "indie"],
-        "popularity": 70,
     }
 
     client = SpotifyClient(sp=fake_sp, cache=cache)
@@ -87,7 +85,6 @@ def _saved_track_item(idx: int, artist_id: str = "a1") -> dict[str, Any]:
             "artists": [{"id": artist_id, "name": "Artist 1"}],
             "album": {"name": "Album", "release_date": "2020-01-01"},
             "duration_ms": 200_000,
-            "popularity": 50,
             "explicit": False,
         },
         "added_at": "2024-06-01T00:00:00Z",
@@ -123,7 +120,6 @@ def test_liked_songs_paginates_and_synthesizes_pseudo_playlist(tmp_path: Path) -
         "id": "a1",
         "name": "Artist 1",
         "genres": ["rock", "indie"],
-        "popularity": 70,
     }
 
     client = SpotifyClient(sp=fake_sp, cache=cache)
@@ -153,7 +149,7 @@ def test_artists_uses_long_ttl_for_cached_entries(tmp_path: Path) -> None:
     cache = FileCache(root=tmp_path)  # default 7-day TTL
     cache.put(
         "artist/a1",
-        {"id": "a1", "name": "Alice", "genres": ["rock"], "popularity": 50},
+        {"id": "a1", "name": "Alice", "genres": ["rock"]},
     )
     cache_file = tmp_path / "artist" / "a1.json"
     thirty_days_ago = time.time() - 30 * 86_400
@@ -236,8 +232,8 @@ def test_artists_throttles_between_uncached_fetches(tmp_path: Path) -> None:
     cache = FileCache(root=tmp_path)
     fake_sp = MagicMock()
     fake_sp.artist.side_effect = [
-        {"id": "a1", "name": "Alice", "genres": ["rock"], "popularity": 50},
-        {"id": "a2", "name": "Bob", "genres": ["pop"], "popularity": 40},
+        {"id": "a1", "name": "Alice", "genres": ["rock"]},
+        {"id": "a2", "name": "Bob", "genres": ["pop"]},
     ]
 
     client = SpotifyClient(sp=fake_sp, cache=cache)

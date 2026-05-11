@@ -13,15 +13,23 @@ This is a quick history of constraints, not just a list of missing features. Eac
 
 ### The timeline
 
-**November 2024** — Spotify removed the richest analysis endpoints for any developer app registered from that point on:
+**November 27, 2024** — Spotify removed the richest analysis endpoints for any developer app registered from that point on (announced on the [Spotify for Developers blog](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api)):
 
 - `audio-features` — danceability, energy, valence, tempo, key, acousticness, instrumentalness, loudness, etc.
 - `audio-analysis` — bar / beat / segment-level structural data
 - `recommendations` — "give me tracks like these"
 - `related-artists`
 - featured / category playlists, genre seeds
+- 30-second preview URLs in multi-get responses
 
 Apps grandfathered before that date kept access, but we're a new app, so these return `403 Forbidden`.
+
+**Through 2025 — silent field strip.** In addition to the formally-announced deprecations, two **fields** that the documentation still lists started returning empty (or being omitted entirely) from the responses our app receives:
+
+- `genres` on the artist object (`GET /artists/{id}`)
+- `popularity` on both track and artist objects
+
+There was no blog post or migration notice for this — it's been observed empirically across the developer community throughout 2025 and confirmed for this project by inspecting our cached responses on 2026-05-07.
 
 **February 2026** — Spotify removed the batch-artists endpoint (`GET /artists?ids=...`) for new apps. What had been a single round-trip for a whole playlist's worth of artists became **one HTTP call per artist**. A 3 000-track library can reference 2 000+ unique artists; at one request per artist the naive approach would be extremely slow.
 
@@ -33,8 +41,11 @@ Before the Feb 2026 change, artist data was cheap — one call, all artists. Now
 **Rate limits are now the binding constraint.**
 With one request per artist, the client must throttle. Artist fetches are spaced 250 ms apart (~4 req/s) to stay well inside Spotify's rolling-window rate limit. The progress bar (via `tqdm` if installed) and INFO log lines exist specifically because fetching a fresh playlist with 500+ unique artists takes over two minutes — without feedback the notebook would look frozen.
 
-**Genre data moved up one level.**
-Spotify has never exposed genre at the track level. Genres live on the *artist* object. To report a track's genre we look up its primary artist and pull genres from there. This is the only source available.
+**Genre data moved off Spotify entirely.**
+Spotify has never exposed genre at the track level — historically genres lived on the *artist* object, and we'd surface a track's genre by looking up its primary artist. The 2025 silent-field strip closed off that path too: the `genres` field on `GET /artists/{id}` is now empty. The plan to restore genre analysis is a Phase 1 follow-up that pulls per-artist tags from the [Last.fm API](https://www.last.fm/api), filtered through a curated whitelist to drop folksonomy noise ("seen live", "british", "00s", …). Spec: [`docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md`](docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md). Until that lands, `GenreAnalyzer` runs but renders a "No genre data" placeholder.
+
+**Popularity analysis is gone.**
+Track and artist `popularity` were both stripped (see timeline above). `PopularityAnalyzer` previously binned the 0-100 score into a histogram; with every track now reading as 0, the chart degenerated to a single bar. Per the project's no-dead-API-code policy, the analyzer and the field have been removed from the codebase rather than kept as a stub.
 
 ### What this means for the codebase
 
@@ -46,20 +57,20 @@ The endpoints we *do* still have access to give us:
 
 - User profile: display name, follower count, country
 - All your playlists (private + collaborative + saved)
-- Every track of every playlist with: name, artists, album, release date, duration, popularity score (0–100), explicit flag, **timestamp when you added it**
-- Per-artist data including **genres** (which is where genre lives in Spotify's model — there is no track-level genre)
+- Every track of every playlist with: name, artists, album, release date, duration, explicit flag, **timestamp when you added it**
+- Per-artist data: id, name, images (no `genres`, no `popularity`)
 - Saved tracks, top artists, top tracks, recently played
 
 That gives us:
 
 - **Release-year & decade distribution** — how old is your music?
-- **Top genres** (aggregated from artist genres) and top artists
-- **Popularity distribution** — are you a mainstream or deep-cuts listener?
+- **Top artists** (track count and total minutes)
+- **Top genres** (pending Last.fm enrichment — see above)
 - **Total duration** of each playlist; explicit ratio
 - **"Added at" timeline** — how a playlist evolved over time
 - **Cross-playlist comparison** — pick three and see who has the oldest songs, the most variety, the longest runtime
 
-So no mood-map, but a perfectly rich semester-project worth of analysis.
+So no mood-map and no popularity histogram, but a perfectly rich semester-project worth of analysis once Last.fm restores genres.
 
 ## How to run
 
@@ -145,8 +156,8 @@ All tests should pass.
 - `src/spotify_project/cache.py` — `FileCache`, a simple file-based JSON cache with TTL
 - `src/spotify_project/client.py` — `SpotifyClient`, OAuth + API access via `spotipy` (playlists, liked songs, artists)
 - `src/spotify_project/models.py` — `Track`, `Playlist`, `Artist`, `User`, `PlaylistSummary` (frozen dataclasses)
-- `src/spotify_project/analyzer.py` — `Analyzer` ABC + six concrete analyzers (Genre, Year, Artist, Popularity, Duration, Timeline) + `PlaylistAnalyzer` orchestrator. Includes plotting.
-- `tests/` — pytest unit tests (42)
+- `src/spotify_project/analyzer.py` — `Analyzer` ABC + five concrete analyzers (Genre, Year, Artist, Duration, Timeline) + `PlaylistAnalyzer` orchestrator. Includes plotting.
+- `tests/` — pytest unit tests
 - `notebooks/01_explore_playlist.ipynb` — demo notebook
 
 ## Course grading map (20 pts)

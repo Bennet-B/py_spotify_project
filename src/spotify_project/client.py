@@ -46,7 +46,7 @@ class SpotifyClient:
 
     DEFAULT_TOKEN_CACHE: ClassVar[str] = ".cache/spotify_token"
 
-    # Artist genres / popularity rarely change; long TTL avoids re-paying the per-artist API cost on every notebook re-run.
+    # Artist data rarely changes; long TTL avoids re-paying the per-artist API cost on every notebook re-run.
     # Spotify's Feb 2026 batch-artists deprecation made these calls expensive (one round-trip per artist), and a 3000-track library can easily reference 2000+ unique artists.
     ARTIST_CACHE_TTL_DAYS: ClassVar[float] = 365.0
 

@@ -4,7 +4,7 @@ A Spotify analytics + playlist tool, built as the **INFPROG2 FS26 semester proje
 
 ## Goal
 
-Phase 1 (current): A Jupyter notebook that authenticates as a Spotify user and analyzes their playlists — genres, release-year distribution, top artists, popularity, duration, "added at" timeline, cross-playlist comparison.
+Phase 1 (current): A Jupyter notebook that authenticates as a Spotify user and analyzes their playlists — genres, release-year distribution, top artists, duration, "added at" timeline, cross-playlist comparison.
 
 Phase 2 (later, maybe): A small web UI to do the same analyses interactively, plus mutations — create / split / merge / re-sort / dedupe / re-tag playlists. A "playlist organizer" tool.
 
@@ -12,7 +12,7 @@ Phase 2 (later, maybe): A small web UI to do the same analyses interactively, pl
 
 | Criterion | Pts | How we satisfy it |
 | --- | --- | --- |
-| OOP design — 2–3 classes with meaningful inheritance | 4 | **Option B (chosen):** `Analyzer` (ABC) → 6 concrete subclasses with overridden `analyze()` + `plot()` methods (Strategy pattern). Plus `SpotifyClient`, `FileCache`, `PlaylistAnalyzer` orchestrator. Track/Playlist/Artist as plain `@dataclass(frozen=True, slots=True)`. Real polymorphism in `PlaylistAnalyzer.run_all()`. See [Phase 1 design spec](docs/superpowers/specs/2026-04-30-spotify-phase1-design.md). |
+| OOP design — 2–3 classes with meaningful inheritance | 4 | **Option B (chosen):** `Analyzer` (ABC) → 5 concrete subclasses with overridden `analyze()` + `plot()` methods (Strategy pattern). Plus `SpotifyClient`, `FileCache`, `PlaylistAnalyzer` orchestrator. Track/Playlist/Artist as plain `@dataclass(frozen=True, slots=True)`. Real polymorphism in `PlaylistAnalyzer.run_all()`. See [Phase 1 design spec](docs/superpowers/specs/2026-04-30-spotify-phase1-design.md). |
 | Internet data access (public API, programmatic) | 4 | Spotify Web API via `spotipy` |
 | Robustness & validation (try/except, retries, malformed data) | shares slot | spotipy session retries, graceful 403/429 handling, Pydantic at boundaries |
 | Pandas analysis + ≥ 1 visualization | 4 | DataFrame of tracks; matplotlib plots (year histogram, genre bar, etc.) |
@@ -38,10 +38,11 @@ The Spotify Web API was significantly cut down in late 2024 / early 2026. Read t
 
 1. **Audio Features endpoint is deprecated for new apps (Nov 2024).** The classic `valence / energy / danceability / tempo / acousticness / key` features are **not available** to apps registered after 2024-11-27 — they return 403. **Policy:** we do **not** implement deprecated endpoints in `src/`. No `get_audio_features()`, no try/catch fallback, no feature flag. The constraint is documented in README; the codebase contains only what we can run and test. (Driver: user feedback "no untestable / dead code", saved in memory.)
 2. **Audio Analysis, Recommendations, Related Artists, Featured / Category Playlists, Genre Seeds** — also deprecated for new apps. Don't use.
-3. **Track-level genre does not exist.** Genres live on the *artist* object. To get a track's genres we look up its primary artist and use those.
-4. **Pagination is required.** Most list endpoints cap at 50–100 items. Use spotipy's `sp.next(results)` loop.
-5. **Rate limiting:** 429 with `Retry-After` header. spotipy's session handles backoff but be defensive.
-6. **`/v1/...` endpoints are being migrated.** Prefer the spotipy method (e.g. `sp.playlist_items`) over hand-rolled URLs — the library tracks these.
+3. **Artist `genres` and track/artist `popularity` are silently absent.** Even though the docs still list them, response payloads for our app (registered after 2024-11-27) omit both fields entirely. Discovered empirically 2026-05-07 by inspecting cached responses; consistent with developer reports throughout 2025. `popularity` is removed from the codebase per the no-dead-API-code policy; `genres` stays as a field on `Artist` and will be re-sourced from Last.fm (see [Last.fm enrichment spec](docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md)).
+4. **Track-level genre never existed.** When genres flow again (via Last.fm), they're still per-artist; track-level genre is synthesized from the primary artist.
+5. **Pagination is required.** Most list endpoints cap at 50–100 items. Use spotipy's `sp.next(results)` loop.
+6. **Rate limiting:** 429 with `Retry-After` header. spotipy's session handles backoff but be defensive.
+7. **`/v1/...` endpoints are being migrated.** Prefer the spotipy method (e.g. `sp.playlist_items`) over hand-rolled URLs — the library tracks these.
 
 ## Authentication
 

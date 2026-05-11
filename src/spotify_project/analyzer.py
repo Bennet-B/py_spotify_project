@@ -399,75 +399,6 @@ class ArtistAnalyzer(Analyzer):
         _style_axes(ax, self.effective_title, summary)
 
 
-class PopularityAnalyzer(Analyzer):
-    """Distribution of Spotify popularity scores (0-100) across the playlist.
-
-    Args:
-        bins: Number of equal-width bins covering [0, 100]; default 10. Must be a positive integer.
-
-    Raises:
-        ValueError: If ``bins`` is not a positive integer.
-    """
-
-    title = "Popularity Distribution"
-
-    def __init__(self, bins: int = 10, *, title: str | None = None) -> None:
-        if bins < 1:
-            raise ValueError(f"bins must be a positive integer, got {bins}")
-        self.bins = bins
-        self._instance_title = title
-
-    def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Bin track popularity into equal-width buckets across [0, 100].
-
-        Args:
-            df: Track-level DataFrame with a ``popularity`` column (0-100).
-
-        Returns:
-            DataFrame with columns ``bin_low``, ``bin_high``, ``count``. The right edge of the last bin is inclusive (np.histogram behavior); all other bins are right-open.
-        """
-        empty = pd.DataFrame({"bin_low": [], "bin_high": [], "count": []})
-        if df.empty or "popularity" not in df.columns:
-            return self._attach_coverage(empty, df)
-        values = pd.to_numeric(df["popularity"], errors="coerce").dropna()
-        if values.empty:
-            return self._attach_coverage(empty, df)
-        counts, edges = np.histogram(values, bins=self.bins, range=(0, 100))
-        result = pd.DataFrame(
-            {
-                "bin_low": edges[:-1],
-                "bin_high": edges[1:],
-                "count": counts,
-            }
-        )
-        return self._attach_coverage(result, df)
-
-    def plot(self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None) -> None:
-        """Render a histogram of popularity counts plus a vertical mean line.
-
-        The mean is computed from the bin midpoints weighted by counts — accurate enough for visual annotation, even if the underlying data spread within bins is lost.
-
-        Args:
-            ax: Matplotlib Axes to draw on.
-            summary: Output of ``analyze``.
-            color: Bar color; defaults to the class's ``default_color``.
-        """
-        c = color if color is not None else self.default_color
-        if summary.empty:
-            ax.text(0.5, 0.5, "No popularity data", ha="center", va="center")
-            _style_axes(ax, self.effective_title, summary)
-            return
-        widths = summary["bin_high"] - summary["bin_low"]
-        ax.bar(summary["bin_low"], summary["count"], width=widths, align="edge", color=c)
-        midpoints = (summary["bin_low"] + summary["bin_high"]) / 2
-        weighted_mean = (midpoints * summary["count"]).sum() / summary["count"].sum()
-        ax.axvline(weighted_mean, linestyle="--", linewidth=1, color="#444")
-        ax.set_xlabel("Popularity (0-100)")
-        ax.set_ylabel("Track count")
-        ax.set_xlim(0, 100)
-        _style_axes(ax, f"{self.effective_title} (mean ≈ {weighted_mean:.1f})", summary)
-
-
 class DurationAnalyzer(Analyzer):
     """Track-duration distribution (in minutes) plus playlist total runtime.
 
@@ -626,7 +557,6 @@ class PlaylistAnalyzer:
                 GenreAnalyzer(),
                 YearAnalyzer(),
                 ArtistAnalyzer(),
-                PopularityAnalyzer(),
                 DurationAnalyzer(),
                 TimelineAnalyzer(),
             ]
@@ -670,7 +600,6 @@ class PlaylistAnalyzer:
                     "release_year": release_year,
                     "duration_ms": t.duration_ms,
                     "duration_min": t.duration_ms / 60_000,
-                    "popularity": t.popularity,
                     "explicit": t.explicit,
                     "added_at": t.added_at,
                     "is_local": t.is_local,

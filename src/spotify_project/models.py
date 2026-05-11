@@ -10,33 +10,24 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True, frozen=True)
 class Artist:
-    """A Spotify artist with their genres and popularity.
+    """A Spotify artist.
 
     Attributes:
         id: Spotify artist ID.
         name: Display name.
-        genres: Tuple of genre tags assigned by Spotify (often empty).
-        popularity: Integer 0-100; higher means more popular.
-
-    Raises:
-        ValueError: If popularity is outside [0, 100].
+        genres: Tuple of genre tags. Empty for apps registered after Spotify's 2024-11-27 deprecation — Spotify stopped returning this field. Restoration is tracked in docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md.
     """
 
     id: str
     name: str
     genres: tuple[str, ...]
-    popularity: int
-
-    def __post_init__(self) -> None:
-        if not 0 <= self.popularity <= 100:
-            raise ValueError(f"Artist popularity must be in [0, 100], got {self.popularity}")
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Artist:
         """Parse a Spotify artist API response.
 
         Args:
-            data: A spotipy artist dict with keys id/name/genres/popularity.
+            data: A spotipy artist dict with keys id/name and (historically) genres.
 
         Returns:
             The constructed Artist.
@@ -45,7 +36,6 @@ class Artist:
             id=data["id"],
             name=data["name"],
             genres=tuple(data.get("genres", [])),
-            popularity=int(data.get("popularity", 0)),
         )
 
 
@@ -60,13 +50,12 @@ class Track:
         album_name: Name of the track's album.
         release_date: ISO date string from Spotify; may be year-only.
         duration_ms: Length in milliseconds.
-        popularity: 0-100 score.
         explicit: Whether the track has explicit content.
         added_at: When the track was added to the playlist. None for Spotify-curated playlists.
         is_local: True for user-uploaded local files.
 
     Raises:
-        ValueError: If popularity is outside [0, 100], or if duration_ms is negative.
+        ValueError: If duration_ms is negative.
     """
 
     id: str | None
@@ -75,14 +64,11 @@ class Track:
     album_name: str
     release_date: str | None
     duration_ms: int
-    popularity: int
     explicit: bool
     added_at: datetime | None
     is_local: bool
 
     def __post_init__(self) -> None:
-        if not 0 <= self.popularity <= 100:
-            raise ValueError(f"Track popularity must be in [0, 100], got {self.popularity}")
         if self.duration_ms < 0:
             raise ValueError(f"Track duration_ms must be >= 0, got {self.duration_ms}")
 
@@ -127,7 +113,6 @@ class Track:
             album_name=track_data.get("album", {}).get("name", ""),
             release_date=track_data.get("album", {}).get("release_date"),
             duration_ms=int(track_data.get("duration_ms", 0)),
-            popularity=int(track_data.get("popularity", 0)),
             explicit=bool(track_data.get("explicit", False)),
             added_at=added_at,
             is_local=is_local,

@@ -27,7 +27,6 @@ def test_to_parquet_round_trip_preserves_schema(tmp_path: Path) -> None:
                 "release_year": pd.array([2020], dtype="Int64")[0],
                 "duration_ms": 200_000,
                 "duration_min": 200_000 / 60_000,
-                "popularity": 50,
                 "explicit": False,
                 "added_at": pd.Timestamp("2024-06-01", tz="UTC"),
                 "is_local": False,
