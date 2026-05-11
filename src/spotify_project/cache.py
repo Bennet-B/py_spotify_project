@@ -8,7 +8,7 @@ from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
-# src/spotify_project/cache.py → parents[0] = src/spotify_project, parents[1] = src, parents[2] = repo root
+# parents[2] = repo root (src/spotify_project/cache.py → ../../..)
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_DIR = _PROJECT_ROOT / ".cache" / "api"
 
@@ -69,9 +69,15 @@ class FileCache:
         path.write_text(json.dumps(value), encoding="utf-8")
 
     def clear(self) -> None:
-        """Remove every cached entry under ``root``."""
+        """Remove every cached entry under ``root``.
+
+        Individual unlink errors (e.g. Windows file locks while a reader holds the file open) are logged and skipped so a single stuck file doesn't abort the sweep.
+        """
         for f in self.root.rglob("*.json"):
-            f.unlink()
+            try:
+                f.unlink()
+            except OSError as e:
+                logger.warning("Failed to delete cache entry %s: %s; skipping", f, e)
 
     def _path_for(self, key: str) -> Path:
         """Resolve ``key`` to its on-disk path, rejecting traversal attempts.

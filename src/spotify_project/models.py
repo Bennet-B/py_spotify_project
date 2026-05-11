@@ -110,7 +110,7 @@ class Track:
             if not aid:
                 continue
             if aid not in artist_by_id:
-                logger.warning("artist %s not in lookup; track may lose primary_artist", aid)
+                logger.warning("artist %s missing from lookup; dropping from track %s", aid, track_data.get("id", "<unknown>"))
                 continue
             resolved.append(artist_by_id[aid])
         added_at_raw = item.get("added_at")

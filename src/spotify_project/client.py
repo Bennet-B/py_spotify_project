@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
-# spotipy's inline annotations leave several core methods partially typed (next, playlist, artist).
-# Their parameter types are `Unknown` because spotipy uses `**kwargs` forwarding internally.
-# All call sites already wrap the return value with `cast(dict[str, Any], …)`, so the Unknown only surfaces at the method-type level, not in our downstream usage.
+# spotipy's core methods (next, playlist, artist, …) forward `**kwargs` and surface as Unknown; every call site already casts the return value to `dict[str, Any]`.
 import logging
 import os
 import time

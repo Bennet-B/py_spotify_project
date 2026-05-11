@@ -5,68 +5,6 @@
 **How to use this file:** check off items as you fix them. If you disagree with a finding, strike it through and add a one-line note on why — that's a useful artifact when explaining "why we left this" later.
 
 
-## 🟡 Important — quality, drift, missing tests
-
-### I3. README + docstring drift after the `fetch_*` rename
-
-- `README.md:172` — *"expose the same `playlist()` / `liked_songs()` / `artists()` interface"* → must be `fetch_*`.
-- `models.py:100` — *"populated by `SpotifyClient.playlist`"* → `SpotifyClient.fetch_playlist`.
-
-- [ ] Done
-
-### I4. `cache.py:20` class docstring still says `<repo-root>/.cache`
-
-Actual default is `<repo-root>/.cache/api`. Trivial one-word fix.
-
-- [ ] Done
-
-### I5. README test count is wrong
-
-`README.md:141` says "Expected: 42 tests pass." Actual: **44**.
-
-**Fix:** either update the count or drop it entirely (recommendation: drop — counts rot every time you add a test). Replace with "All tests should pass."
-
-- [ ] Done
-
-### I6. README module list omits new dataclasses
-
-`README.md:148` — `models.py — Track, Playlist, Artist`. Missing `User` and `PlaylistSummary` (added in 4599a4f).
-
-- [ ] Done
-
-### I9. "Sprint C" references rot
-
-- `analyzer.py:36` — `"""Apply the Sprint C consistent style + coverage suffix to an Axes."""`
-- Notebook cell 0 — `"Phase 1 demo (Sprint C, final)"`
-
-Sprint ceremony shouldn't survive in code/docs.
-
-**Fix:** drop "Sprint C" everywhere.
-
-- [ ] Done
-
-### I10. Silent skip without logging — three call sites
-
-- `client.py:125` — `fetch_user_playlists` filters `None` slots silently. If a user has 5 deleted playlists, listing shows 5 fewer with no feedback.
-- `client.py:247` — `_enrich_with_artists` silently filters non-track items (podcasts, local files).
-- `client.py:214` — liked-songs filter silently skips null tracks.
-
-**Fix:** at each site, count what was dropped and `logger.info("Dropped %d non-audio items", dropped)` when nonzero.
-
-- [ ] Done
-
-### I11. tqdm: in `requirements.txt` but documented as optional
-
-`requirements.txt:10`: `tqdm>=4.66 # optional — graceful fallback...`. Currently the fallback path in `client.py:14-20` is untested dead code.
-
-**Fix:** pick one:
-- Move tqdm to a `[project.optional-dependencies]` extra and document install with extra
-- Drop the fallback path; require tqdm
-
-- [ ] Done
-
----
-
 ## 🔵 Suggestions — nice-to-haves
 
 - [ ] **`models.py:113`** — warning says "track may lose primary_artist" but the artist is unconditionally skipped. Tighten to `logger.warning("artist %s missing from lookup; dropping from track %s", aid, track_id)`.
@@ -82,8 +20,6 @@ Sprint ceremony shouldn't survive in code/docs.
 - [ ] **`cache.py:8`** — `parents[2]` arithmetic comment is over-detailed; shrink to `# parents[2] = repo root`.
 
 - [ ] **Pyright-disable rationale headers** in `client.py:1-6` and `analyzer.py:1-6` — three-line justifications can be one or two.
-
-- [ ] **Notebook cell `e8db6079`** — trailing duplicate `# 3v8PWRLiPHGPY0oHgkoZvV` after the playlist-id assignment. Delete.
 
 - [ ] **Notebook cell `adfe3d30`** — duplicates the section header in `7dde2d9e`. Merge.
 
@@ -126,11 +62,3 @@ Sprint ceremony shouldn't survive in code/docs.
 - The logging-redaction-filter design (I-suggestions)
 
 ---
-
-## Action priority (suggested)
-
-1. Fix Critical bugs (B1–B6) — real correctness issues.
-2. I1 (`py314`), I2 (line-length), I7 (missing tests).
-3. README/docstring drift sweep (I3–I6, I9).
-4. Logging visibility (I10) + tqdm decision (I11).
-5. Suggestions cleanup pass.

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
-# matplotlib stubs use `**kwargs: Unknown` on every Axes method (text, bar, barh, set_xlabel, set_ylabel, set_title, invert_yaxis, tight_layout, …).
-# The methods themselves are fully typed; only the pass-through kwargs are Unknown.
-# A per-file disable is the narrowest scope available — there is no per-call-site workaround for `**kwargs: Unknown` propagation.
+# matplotlib's Axes stubs forward `**kwargs: Unknown` on most methods; the methods themselves are typed, but the kwarg propagation has no per-call workaround.
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -119,6 +117,9 @@ class Analyzer(ABC):
 
         Returns:
             ``summary``, with ``attrs["coverage"]`` set.
+
+        Side effects:
+            Emits ``logger.warning`` when ``n_data / n_total < _LOW_COVERAGE_THRESHOLD`` (0.7).
         """
         n_data, n_total = self.coverage(df)
         if n_total > 0 and n_data / n_total < _LOW_COVERAGE_THRESHOLD:
@@ -290,7 +291,7 @@ class ArtistAnalyzer(Analyzer):
 
     With ``primary_only=False`` (default), every artist on every track gets naive credit — a 4-minute track with two artists adds 4 minutes to each.
     With ``primary_only=True``, only the first-listed (lead) artist on each track is counted.
-    Coverage is expected to always be 100% (coverage method is not overridden).
+    Coverage counts rows with a non-null ``primary_artist_id``; local files and tracks whose artists were dropped during enrichment lower it.
 
     Args:
         top_n: How many artists to return; default 15.
@@ -303,6 +304,13 @@ class ArtistAnalyzer(Analyzer):
         self.top_n = top_n
         self.primary_only = primary_only
         self._instance_title = title
+
+    def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
+        """Count rows with a non-null ``primary_artist_id`` (local files and tracks dropped during artist enrichment have ``None``)."""
+        if df.empty or "primary_artist_id" not in df.columns:
+            return (0, len(df))
+        n_with = int(df["primary_artist_id"].notna().sum())
+        return (n_with, len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Aggregate track count and total minutes per artist.
@@ -343,8 +351,7 @@ class ArtistAnalyzer(Analyzer):
             required = {"artist_ids", "artist_names", "duration_min"}
             if not required.issubset(df.columns):
                 return self._attach_coverage(empty, df)
-            # Explode artist_ids and artist_names in lock-step so each exploded row holds the matching name.
-            # Pandas explode preserves ordering within the row, so the parallelism is preserved.
+            # Zip into pairs before explode: keeps each id with its matching name even though pandas explode preserves order.
             exploded = df[["artist_ids", "artist_names", "duration_min"]].copy()
             exploded["pair"] = exploded.apply(lambda row: list(zip(row["artist_ids"], row["artist_names"], strict=True)), axis=1)  # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
             exploded = exploded.explode("pair").dropna(subset=["pair"])
