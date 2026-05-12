@@ -135,3 +135,52 @@ def test_plot_all_skips_zero_coverage_analyzer() -> None:
     pa.plot_all(fig)  # should not raise
     # One subplot, not two:
     assert len(fig.axes) == 1
+
+
+def test_from_playlist_materializes_tags_column() -> None:
+    from spotify_project.analyzer import PlaylistAnalyzer
+    from spotify_project.models import Artist, Playlist, Track
+
+    artist = Artist(id="A1", name="Artist One", tags=("rock", "indie"))
+    track = Track(
+        id="T1",
+        name="Track",
+        artists=(artist,),
+        album_name="Album",
+        release_date="2020-01-01",
+        duration_ms=200_000,
+        explicit=False,
+        added_at=None,
+        is_local=False,
+    )
+    playlist = Playlist(
+        id="P1",
+        name="P",
+        owner_display_name="",
+        public=False,
+        collaborative=False,
+        description="",
+        tracks=(track,),
+    )
+    pa = PlaylistAnalyzer.from_playlist(playlist)
+    assert "tags" in pa.df.columns
+    assert "genres" in pa.df.columns
+    assert pa.df["tags"].iloc[0] == ["rock", "indie"]
+    assert pa.df["genres"].iloc[0] == ["rock", "indie"]
+
+
+def test_from_playlist_default_analyzers_include_tag_analyzer() -> None:
+    from spotify_project.analyzer import PlaylistAnalyzer, TagAnalyzer
+    from spotify_project.models import Playlist
+
+    empty_playlist = Playlist(
+        id="P",
+        name="P",
+        owner_display_name="",
+        public=False,
+        collaborative=False,
+        description="",
+        tracks=(),
+    )
+    pa = PlaylistAnalyzer.from_playlist(empty_playlist)
+    assert any(isinstance(a, TagAnalyzer) for a in pa.analyzers)
