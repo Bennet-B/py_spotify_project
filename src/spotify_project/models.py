@@ -5,37 +5,56 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from .genre_taxonomy import filter_to_genres
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
 class Artist:
-    """A Spotify artist.
+    """A Spotify artist enriched with Last.fm tags.
 
     Attributes:
         id: Spotify artist ID.
         name: Display name.
-        genres: Tuple of genre tags. Empty for apps registered after Spotify's 2024-11-27 deprecation — Spotify stopped returning this field. Restoration is tracked in docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md.
+        tags: Raw Last.fm tags, lowercased, in descending-weight order.
+            Empty when Last.fm enrichment is disabled or the artist is
+            unknown to Last.fm.
     """
 
     id: str
     name: str
-    genres: tuple[str, ...]
+    tags: tuple[str, ...] = ()
+
+    @property
+    def genres(self) -> tuple[str, ...]:
+        """Whitelist-filtered subset of tags, preserving descending-weight order.
+
+        Recomputed on every access (cheap: a tuple comprehension over <=10 items).
+        Whitelist edits in genre_taxonomy.py take effect immediately on next read,
+        with no need to rebuild Artist instances or re-fetch from Last.fm.
+
+        Returns:
+            Tuple of whitelisted genre tags in the same order they appear in tags.
+        """
+        return tuple(filter_to_genres(self.tags))
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Artist:
         """Parse a Spotify artist API response.
 
         Args:
-            data: A spotipy artist dict with keys id/name and (historically) genres.
+            data: A spotipy artist dict with keys id and name. The legacy
+                ``genres`` field (always empty for our app) is ignored;
+                tags come from Last.fm enrichment, attached later by
+                ``SpotifyClient._enrich_with_artists`` via dataclasses.replace.
 
         Returns:
-            The constructed Artist.
+            The constructed Artist with empty tags. Enrichment fills tags later.
         """
         return cls(
             id=data["id"],
             name=data["name"],
-            genres=tuple(data.get("genres", [])),
         )
 
 

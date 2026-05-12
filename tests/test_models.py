@@ -67,3 +67,37 @@ def test_track_from_api_warns_on_unknown_artist_id(
         track = Track.from_api(item, artist_by_id={})
     assert track.artists == ()
     assert "missing_id" in caplog.text
+
+
+def test_artist_tags_defaults_to_empty_tuple() -> None:
+    from spotify_project.models import Artist
+
+    a = Artist(id="x", name="y")
+    assert a.tags == ()
+    assert a.genres == ()
+
+
+def test_artist_genres_filters_tags_through_whitelist() -> None:
+    from spotify_project.models import Artist
+
+    a = Artist(id="x", name="y", tags=("rock", "seen live", "indie", "british"))
+    assert a.genres == ("rock", "indie")
+
+
+def test_artist_genres_preserves_descending_weight_order() -> None:
+    from spotify_project.models import Artist
+
+    a = Artist(id="x", name="y", tags=("indie", "rock"))
+    assert a.genres == ("indie", "rock")
+    b = Artist(id="x", name="y", tags=("rock", "indie"))
+    assert b.genres == ("rock", "indie")
+
+
+def test_artist_from_api_ignores_legacy_genres_field() -> None:
+    # Spotify still emits an empty `genres` list for our app; we drop the field.
+    # If they ever started returning values, we'd ignore them — Last.fm is the source.
+    from spotify_project.models import Artist
+
+    a = Artist.from_api({"id": "x", "name": "y", "genres": ["leftover"]})
+    assert a.tags == ()
+    assert a.genres == ()
