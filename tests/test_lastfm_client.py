@@ -139,10 +139,12 @@ def test_fetch_artist_tags_retries_on_rate_limit_then_succeeds(cache: FileCache)
         _mock_urlopen_response(rate_limit_payload),
         _mock_urlopen_response(success_payload),
     ]
-    with patch("spotify_project.lastfm_client.urlopen", side_effect=side_effects), patch("spotify_project.lastfm_client.time.sleep"):
+    with patch("spotify_project.lastfm_client.urlopen", side_effect=side_effects), patch("spotify_project.lastfm_client.time.sleep") as mock_sleep:
         # The first response triggers a single retry; the second succeeds.
         tags = client.fetch_artist_tags("x", "X")
     assert tags == ("rock",)
+    assert mock_sleep.call_count == 1
+    assert mock_sleep.call_args[0][0] == pytest.approx(LastFmClient.RATE_LIMIT_DELAY_SECONDS * 5)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_fetch_artist_tags_raises_when_rate_limit_persists(cache: FileCache) -> None:
@@ -152,8 +154,14 @@ def test_fetch_artist_tags_raises_when_rate_limit_persists(cache: FileCache) -> 
         _mock_urlopen_response(rate_limit_payload),
         _mock_urlopen_response(rate_limit_payload),
     ]
-    with patch("spotify_project.lastfm_client.urlopen", side_effect=side_effects), patch("spotify_project.lastfm_client.time.sleep"), pytest.raises(RuntimeError, match="rate limit"):
+    with (
+        patch("spotify_project.lastfm_client.urlopen", side_effect=side_effects),
+        patch("spotify_project.lastfm_client.time.sleep") as mock_sleep,
+        pytest.raises(RuntimeError, match="rate limit"),
+    ):
         client.fetch_artist_tags("x", "X")
+    assert mock_sleep.call_count == 1
+    assert mock_sleep.call_args[0][0] == pytest.approx(LastFmClient.RATE_LIMIT_DELAY_SECONDS * 5)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_fetch_artist_tags_raises_on_other_errors(cache: FileCache) -> None:
