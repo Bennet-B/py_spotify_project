@@ -60,16 +60,27 @@ def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
 class Analyzer(ABC):
     """Abstract analyzer over a track DataFrame.
 
-    Concrete subclasses override ``analyze`` (returns a summary DataFrame) and ``plot`` (renders the result onto a Matplotlib Axes provided by the caller).
-    Each subclass MUST also declare a non-empty class-level ``title``; this is enforced at class-definition time.
+    Concrete subclasses override ``analyze`` (returns a summary DataFrame) and
+    ``plot`` (renders the result onto a Matplotlib Axes provided by the caller).
+    Each subclass MUST also declare a non-empty class-level ``title``; this is
+    enforced at class-definition time.
 
     Attributes:
-        title: Short title; appears as the plot's title and is used as the key in ``PlaylistAnalyzer.run_all``'s result dict,
-            so collisions between subclasses would silently overwrite results.
+        title: Short title; appears as the plot's title and is used as the
+            key in ``PlaylistAnalyzer.run_all``'s result dict.
+        default_color: Default bar/line color for plot().
+        skip_message: If set, ``PlaylistAnalyzer.run_all`` and ``plot_all``
+            skip this analyzer when its ``coverage()`` returns ``(0, n)``.
+            Default None means "always run, even at zero coverage" (the
+            analyzer's own ``plot`` renders an empty-state placeholder).
+            Use skip_message for analyzers whose data source can be entirely
+            absent (e.g. tags without a Last.fm key) — the user-visible
+            message is logged when the skip triggers.
     """
 
     title: ClassVar[str]
     default_color: ClassVar[_Color] = "#1f77b4"
+    skip_message: ClassVar[str | None] = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -136,6 +147,7 @@ class GenreAnalyzer(Analyzer):
     """
 
     title = "Top Genres"
+    skip_message = "no genres after whitelist filtering — set LASTFM_API_KEY to enable, or extend GENRE_WHITELIST in genre_taxonomy.py."
 
     def __init__(self, top_n: int = 15, *, title: str | None = None) -> None:
         self.top_n = top_n
@@ -612,25 +624,41 @@ class PlaylistAnalyzer:
         return cls(df=df, analyzers=analyzers)
 
     def run_all(self) -> dict[str, pd.DataFrame]:
-        """Run every registered Analyzer; returns ``{title: summary_df}``."""
-        return {a.effective_title: a.analyze(self.df) for a in self.analyzers}
+        """Run every registered Analyzer; returns ``{title: summary_df}``.
+
+        Analyzers whose ``coverage(df)`` returns ``(0, n)`` AND that have set
+        ``skip_message`` are skipped entirely (no entry in the result dict);
+        a single INFO log line records the skip and the analyzer's hint.
+        """
+        out: dict[str, pd.DataFrame] = {}
+        for a in self.analyzers:
+            if a.skip_message is not None:
+                n_data, _ = a.coverage(self.df)
+                if n_data == 0:
+                    logger.info("Skipping %s: %s", a.effective_title, a.skip_message)
+                    continue
+            out[a.effective_title] = a.analyze(self.df)
+        return out
 
     def plot_all(self, fig: Figure) -> None:
-        """Lay out one subplot per analyzer in a vertical stack on ``fig``.
+        """Lay out one subplot per non-skipped analyzer in a vertical stack on ``fig``.
 
-        Each panel uses one color from seaborn's ``"colorblind"`` palette, assigned in registration order.
+        Analyzers whose ``coverage(df)`` returns ``(0, n)`` AND that have set
+        ``skip_message`` are skipped — no subplot allocated. The log line is
+        emitted by ``run_all``, which this method calls.
 
         Args:
             fig: Matplotlib Figure to subdivide with subplots.
         """
-        n = len(self.analyzers)
+        summaries = self.run_all()
+        active = [a for a in self.analyzers if a.effective_title in summaries]
+        n = len(active)
         if n == 0:
             return
-        summaries = self.run_all()
         axes = fig.subplots(n, 1)
         axes_list = [axes] if n == 1 else list(axes)
         palette = sns.color_palette("colorblind", n_colors=n)
-        for ax, analyzer, color in zip(axes_list, self.analyzers, palette, strict=True):
+        for ax, analyzer, color in zip(axes_list, active, palette, strict=True):
             analyzer.plot(ax, summaries[analyzer.effective_title], color=color)
         fig.tight_layout()
 
