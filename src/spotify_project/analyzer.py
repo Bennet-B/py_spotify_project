@@ -663,7 +663,7 @@ class PlaylistAnalyzer:
     def from_playlist(cls, playlist: Playlist, analyzers: list[Analyzer] | None = None) -> PlaylistAnalyzer:
         """Build a PlaylistAnalyzer from a Playlist by flattening tracks.
 
-        Each Track's ``primary_artist`` is read for the ``primary_artist_*`` and ``genres`` columns.
+        Each Track's ``primary_artist`` is read for the ``primary_artist_*``, ``tags``, and ``genres`` columns.
         Local files (``is_local=True``) yield empty genres and ``None`` for artist IDs.
 
         Args:
