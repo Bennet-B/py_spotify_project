@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import urllib.parse
 from typing import Any, ClassVar, cast
 from urllib.request import Request, urlopen
@@ -51,28 +52,61 @@ class LastFmClient:
     ) -> tuple[str, ...]:
         """Return the top-N Last.fm tags for an artist.
 
-        Tags are lowercased and returned in descending-weight order (Last.fm's
-        native ordering). Cached under ``lastfm_artist/<spotify_artist_id>.json``
-        with a 365-day TTL — tags drift slowly and re-fetching every notebook
-        run wastes time. Uses ``autocorrect=1`` so common misspellings still
-        match the canonical artist.
+        Tags are lowercased and returned in descending-weight order. Cached
+        under ``lastfm_artist/<spotify_artist_id>.json`` with a 365-day TTL.
+        Negative results (artist not found) are cached too. Rate-limit
+        responses trigger a single retry; persistent rate-limit raises.
 
         Args:
-            spotify_artist_id: The Spotify artist ID, used as the cache key
-                (so two Last.fm artists with the same name don't collide).
-            artist_name: The artist's display name, used in the Last.fm
-                query string.
-            force_refresh: If True, skip the cache and refetch from Last.fm.
+            spotify_artist_id: Spotify artist ID, used as the cache key.
+            artist_name: Display name, sent to Last.fm with ``autocorrect=1``.
+            force_refresh: If True, skip the cache and refetch.
 
         Returns:
-            Tuple of up to DEFAULT_TOP_N lowercased tags, descending-weight
-            order. Empty tuple if Last.fm has no tags for this artist.
+            Tuple of up to DEFAULT_TOP_N lowercased tags, descending-weight order.
+
+        Raises:
+            RuntimeError: On persistent rate-limit (code 29 twice) or any
+                non-"not found" Last.fm error.
         """
         cache_key = f"lastfm_artist/{spotify_artist_id}"
         cached = None if force_refresh else self.cache.get(cache_key, ttl_days=self.CACHE_TTL_DAYS)
         if cached is not None:
             return tuple(cast(list[str], cached["tags"]))
 
+        for attempt in range(2):
+            data = self._call_get_top_tags(artist_name)
+            error_code = data.get("error")
+            if error_code is None:
+                tags = self._extract_tags(data)
+                self.cache.put(cache_key, {"tags": list(tags)})
+                return tags
+            if error_code == 6:
+                # Artist not found — log once, cache empty result, move on.
+                logger.warning("Last.fm has no entry for artist %r (id=%s); recording empty tags", artist_name, spotify_artist_id)
+                self.cache.put(cache_key, {"tags": []})
+                return ()
+            if error_code == 29:
+                if attempt == 0:
+                    logger.warning("Last.fm rate limit hit; sleeping %.1fs and retrying", self.RATE_LIMIT_DELAY_SECONDS * 5)
+                    time.sleep(self.RATE_LIMIT_DELAY_SECONDS * 5)
+                    continue
+                break  # attempt 1 still rate-limited — fall to post-loop raise
+            message = data.get("message", "<no message>")
+            raise RuntimeError(f"Last.fm error {error_code} for artist {artist_name!r}: {message}")
+        # Rate limit persisted across both attempts.
+        raise RuntimeError(f"Last.fm rate limit persisted after retry for artist {artist_name!r}")
+
+    def _call_get_top_tags(self, artist_name: str) -> dict[str, Any]:
+        """Make a single HTTP GET to the Last.fm artist.getTopTags endpoint.
+
+        Args:
+            artist_name: Display name, URL-encoded into the query string.
+
+        Returns:
+            The parsed JSON body. The caller must inspect the ``error`` key
+            (Last.fm uses HTTP 200 + error code in body to report failures).
+        """
         params = {
             "method": "artist.getTopTags",
             "artist": artist_name,
@@ -84,11 +118,7 @@ class LastFmClient:
         request = Request(url, headers={"User-Agent": "py_spotify_project/0.1"})
         with urlopen(request, timeout=self.REQUEST_TIMEOUT_SECONDS) as response:
             body = response.read()
-        data = cast(dict[str, Any], json.loads(body))
-
-        tags = self._extract_tags(data)
-        self.cache.put(cache_key, {"tags": list(tags)})
-        return tags
+        return cast(dict[str, Any], json.loads(body))
 
     def _extract_tags(self, data: dict[str, Any]) -> tuple[str, ...]:
         """Pull and normalize the tag list from a Last.fm response body.

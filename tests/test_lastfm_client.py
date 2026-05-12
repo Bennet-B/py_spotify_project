@@ -109,3 +109,55 @@ def test_fetch_artist_tags_returns_empty_when_no_tags(cache: FileCache) -> None:
     with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)):
         tags = client.fetch_artist_tags("x", "X")
     assert tags == ()
+
+
+def test_fetch_artist_tags_returns_empty_on_artist_not_found(cache: FileCache, caplog: pytest.LogCaptureFixture) -> None:
+    client = LastFmClient(api_key="test-key", cache=cache)
+    # Last.fm returns HTTP 200 even on errors; the error is in the body.
+    error_payload = {"error": 6, "message": "The artist you supplied could not be found"}
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(error_payload)), caplog.at_level("WARNING", logger="spotify_project.lastfm_client"):
+        tags = client.fetch_artist_tags("x", "ObscureArtist")
+    assert tags == ()
+    assert any("ObscureArtist" in rec.message for rec in caplog.records)
+
+
+def test_fetch_artist_tags_caches_artist_not_found_result(cache: FileCache) -> None:
+    # Negative results are cached too — no point refetching a known-missing artist.
+    client = LastFmClient(api_key="test-key", cache=cache)
+    error_payload = {"error": 6, "message": "not found"}
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(error_payload)) as mocked:
+        client.fetch_artist_tags("x", "X")
+        client.fetch_artist_tags("x", "X")
+    assert mocked.call_count == 1
+
+
+def test_fetch_artist_tags_retries_on_rate_limit_then_succeeds(cache: FileCache) -> None:
+    client = LastFmClient(api_key="test-key", cache=cache)
+    rate_limit_payload = {"error": 29, "message": "Rate limit exceeded"}
+    success_payload = {"toptags": {"tag": [{"name": "rock", "count": 100}]}}
+    side_effects = [
+        _mock_urlopen_response(rate_limit_payload),
+        _mock_urlopen_response(success_payload),
+    ]
+    with patch("spotify_project.lastfm_client.urlopen", side_effect=side_effects), patch("spotify_project.lastfm_client.time.sleep"):
+        # The first response triggers a single retry; the second succeeds.
+        tags = client.fetch_artist_tags("x", "X")
+    assert tags == ("rock",)
+
+
+def test_fetch_artist_tags_raises_when_rate_limit_persists(cache: FileCache) -> None:
+    client = LastFmClient(api_key="test-key", cache=cache)
+    rate_limit_payload = {"error": 29, "message": "Rate limit exceeded"}
+    side_effects = [
+        _mock_urlopen_response(rate_limit_payload),
+        _mock_urlopen_response(rate_limit_payload),
+    ]
+    with patch("spotify_project.lastfm_client.urlopen", side_effect=side_effects), patch("spotify_project.lastfm_client.time.sleep"), pytest.raises(RuntimeError, match="rate limit"):
+        client.fetch_artist_tags("x", "X")
+
+
+def test_fetch_artist_tags_raises_on_other_errors(cache: FileCache) -> None:
+    client = LastFmClient(api_key="test-key", cache=cache)
+    error_payload = {"error": 10, "message": "Invalid API key"}
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(error_payload)), pytest.raises(RuntimeError, match="Invalid API key"):
+        client.fetch_artist_tags("x", "X")
