@@ -71,6 +71,28 @@ def test_fetch_artist_tags_force_refresh_bypasses_cache(cache: FileCache) -> Non
     assert mocked.call_count == 2
 
 
+def test_fetch_artist_tags_force_refresh_updates_cache(cache: FileCache) -> None:
+    client = LastFmClient(api_key="test-key", cache=cache)
+    original_payload = {"toptags": {"tag": [{"name": "rock", "count": 100}]}}
+    refreshed_payload = {"toptags": {"tag": [{"name": "pop", "count": 100}]}}
+
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(original_payload)):
+        client.fetch_artist_tags("x", "X")
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(refreshed_payload)):
+        client.fetch_artist_tags("x", "X", force_refresh=True)
+
+    # No mock this time — must be served from cache, which should hold the refreshed value.
+    tags = client.fetch_artist_tags("x", "X")
+    assert tags == ("pop",)
+
+
+def test_fetch_artist_tags_returns_empty_when_toptags_key_missing(cache: FileCache) -> None:
+    client = LastFmClient(api_key="test-key", cache=cache)
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response({})):
+        tags = client.fetch_artist_tags("x", "X")
+    assert tags == ()
+
+
 def test_fetch_artist_tags_handles_single_tag_dict(cache: FileCache) -> None:
     # Last.fm's XML-to-JSON conversion sometimes returns a single dict
     # instead of a 1-element list. We normalize.

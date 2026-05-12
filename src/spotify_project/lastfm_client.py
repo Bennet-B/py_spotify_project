@@ -30,6 +30,15 @@ class LastFmClient:
     REQUEST_TIMEOUT_SECONDS: ClassVar[float] = 10.0
 
     def __init__(self, api_key: str, cache: FileCache) -> None:
+        """Construct a LastFmClient with explicit dependencies.
+
+        Args:
+            api_key: Non-empty Last.fm API key. The factory ``from_env``
+                enforces non-empty-ness; direct callers are trusted to pass
+                a real key.
+            cache: FileCache used to persist per-artist tag lists under the
+                ``lastfm_artist/<spotify_artist_id>`` key prefix.
+        """
         self.api_key = api_key
         self.cache = cache
 
