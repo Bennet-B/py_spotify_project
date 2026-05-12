@@ -169,3 +169,25 @@ def test_fetch_artist_tags_raises_on_other_errors(cache: FileCache) -> None:
     error_payload = {"error": 10, "message": "Invalid API key"}
     with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(error_payload)), pytest.raises(RuntimeError, match="Invalid API key"):
         client.fetch_artist_tags("x", "X")
+
+
+def test_from_env_returns_client_when_key_set(cache: FileCache, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LASTFM_API_KEY", "real-key-xyz")
+    client = LastFmClient.from_env(cache=cache)
+    assert client is not None
+    assert client.api_key == "real-key-xyz"
+    assert client.cache is cache
+
+
+def test_from_env_returns_none_when_key_missing(cache: FileCache, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    monkeypatch.delenv("LASTFM_API_KEY", raising=False)
+    with caplog.at_level("INFO", logger="spotify_project.lastfm_client"):
+        client = LastFmClient.from_env(cache=cache)
+    assert client is None
+    assert any("LASTFM_API_KEY" in rec.message for rec in caplog.records)
+
+
+def test_from_env_returns_none_when_key_blank(cache: FileCache, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LASTFM_API_KEY", "")
+    client = LastFmClient.from_env(cache=cache)
+    assert client is None

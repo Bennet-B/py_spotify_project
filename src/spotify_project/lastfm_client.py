@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import urllib.parse
 from typing import Any, ClassVar, cast
@@ -42,6 +43,28 @@ class LastFmClient:
         """
         self.api_key = api_key
         self.cache = cache
+
+    @classmethod
+    def from_env(cls, cache: FileCache) -> LastFmClient | None:
+        """Build a LastFmClient from the LASTFM_API_KEY env var.
+
+        Reads the key from ``os.environ``. Returns None and emits a single
+        INFO log line when the key is unset or empty — Last.fm enrichment is
+        optional; the notebook degrades gracefully and TagAnalyzer/GenreAnalyzer
+        get skipped instead of producing empty panels.
+
+        Args:
+            cache: FileCache for response persistence.
+
+        Returns:
+            A configured LastFmClient, or None when LASTFM_API_KEY is unset
+            or blank.
+        """
+        key = os.environ.get("LASTFM_API_KEY", "").strip()
+        if not key:
+            logger.info("Last.fm enrichment disabled — set LASTFM_API_KEY to enable. Tag and Genre panels will be skipped.")
+            return None
+        return cls(api_key=key, cache=cache)
 
     def fetch_artist_tags(
         self,
