@@ -47,6 +47,29 @@ Spotify has never exposed genre at the track level — historically genres lived
 **Popularity analysis is gone.**
 Track and artist `popularity` were both stripped (see timeline above). `PopularityAnalyzer` previously binned the 0-100 score into a histogram; with every track now reading as 0, the chart degenerated to a single bar. Per the project's no-dead-API-code policy, the analyzer and the field have been removed from the codebase rather than kept as a stub.
 
+### Restoring genres (and adding tags) via Last.fm
+
+Genres are re-sourced from Last.fm's `artist.getTopTags` endpoint, and raw
+tags are surfaced as a separate analysis:
+
+- ~95% per-artist coverage for typical Spotify libraries (mainstream + indie).
+- One-time enrichment cost: ~7 minutes for ~2000 unique artists.
+- Cached for 365 days under `.cache/api/lastfm_artist/<spotify_artist_id>.json`.
+- `Top Tags` panel: raw Last.fm tags (eras, geography, moods, real genres).
+- `Top Genres` panel: tags filtered through a curated whitelist in
+  `src/spotify_project/genre_taxonomy.py`. Whitelist edits take effect
+  instantly — no re-enrichment needed.
+
+**To enable Last.fm locally:** register at
+<https://www.last.fm/api/account/create> and set `LASTFM_API_KEY` in `.env`.
+The project runs fine without a Last.fm key — the `Top Tags` and `Top Genres`
+panels are skipped with an INFO log line.
+
+**Caveat:** Last.fm's audience skews Western and indie, so the tag
+distribution is biased that way. For mainstream pop and indie rock the data
+is excellent; for K-pop, classical, and very-niche electronic the tag set
+is sparser and less precise.
+
 ### What this means for the codebase
 
 We do not implement endpoints we cannot exercise. There is no `get_audio_features()` method, no `recommendations()` method, no `related_artists()` method anywhere in `src/spotify_project/`. We did not add try/catch wrappers, feature flags, or "if available" branches for these features either. **Untested code is technical debt the moment it lands**, so we keep the codebase clean and document the constraint here once. If Spotify ever restores access (or we get a grandfathered app), adding the code is a small follow-up; until then it would be code we cannot test, run, or defend.

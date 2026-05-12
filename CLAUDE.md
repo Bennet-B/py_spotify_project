@@ -38,7 +38,7 @@ The Spotify Web API was significantly cut down in late 2024 / early 2026. Read t
 
 1. **Audio Features endpoint is deprecated for new apps (Nov 2024).** The classic `valence / energy / danceability / tempo / acousticness / key` features are **not available** to apps registered after 2024-11-27 — they return 403. **Policy:** we do **not** implement deprecated endpoints in `src/`. No `get_audio_features()`, no try/catch fallback, no feature flag. The constraint is documented in README; the codebase contains only what we can run and test. (Driver: user feedback "no untestable / dead code", saved in memory.)
 2. **Audio Analysis, Recommendations, Related Artists, Featured / Category Playlists, Genre Seeds** — also deprecated for new apps. Don't use.
-3. **Artist `genres` and track/artist `popularity` are silently absent.** Even though the docs still list them, response payloads for our app (registered after 2024-11-27) omit both fields entirely. Discovered empirically 2026-05-07 by inspecting cached responses; consistent with developer reports throughout 2025. `popularity` is removed from the codebase per the no-dead-API-code policy; `genres` stays as a field on `Artist` and will be re-sourced from Last.fm (see [Last.fm enrichment spec](docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md)).
+3. **Artist `genres` and track/artist `popularity` are silently absent.** Even though the docs still list them, response payloads for our app (registered after 2024-11-27) omit both fields entirely. Discovered empirically 2026-05-07 by inspecting cached responses; consistent with developer reports throughout 2025. `popularity` is removed from the codebase per the no-dead-API-code policy. `Artist` stores raw Last.fm tags in a `tags: tuple[str, ...]` field; `.genres` is a derived `@property` that filters those tags through a curated whitelist in `src/spotify_project/genre_taxonomy.py`. With no Last.fm key, `tags` stays empty, `.genres` returns `()`, and the `Top Tags` / `Top Genres` analyzer panels are skipped with an INFO log line. (See [Last.fm enrichment spec](docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md).)
 4. **Track-level genre never existed.** When genres flow again (via Last.fm), they're still per-artist; track-level genre is synthesized from the primary artist.
 5. **Pagination is required.** Most list endpoints cap at 50–100 items. Use spotipy's `sp.next(results)` loop.
 6. **Rate limiting:** 429 with `Retry-After` header. spotipy's session handles backoff but be defensive.
@@ -73,10 +73,12 @@ py_spotify_project/
 ├── src/
 │   └── spotify_project/
 │       ├── __init__.py
+│       ├── analyzer.py        # Analyzer (ABC) + 6 subclasses + PlaylistAnalyzer orchestrator
 │       ├── cache.py           # FileCache — file-based API response cache (7-day TTL)
 │       ├── client.py          # SpotifyClient — auth, fetch, retry, pagination
-│       ├── models.py          # @dataclass Track, Playlist, Artist (no inheritance)
-│       └── analyzer.py        # Analyzer (ABC) + 6 subclasses + PlaylistAnalyzer orchestrator
+│       ├── genre_taxonomy.py  # GENRE_WHITELIST + filter_to_genres
+│       ├── lastfm_client.py   # LastFmClient — optional Last.fm enrichment
+│       └── models.py          # @dataclass Track, Playlist, Artist (no inheritance)
 ├── notebooks/
 │   └── 01_explore_user_account.ipynb
 └── tests/
@@ -107,3 +109,4 @@ py_spotify_project/
 ## Current status
 
 - 2026-04-30: Project initialized; Phase 1 design completed via superpowers brainstorming. Pivoted from Option A (SpotifyResource hierarchy) to Option B (Analyzer hierarchy) — better-defended OOP, real polymorphism. Dropped pydantic; added FileCache. Spec at `docs/superpowers/specs/2026-04-30-spotify-phase1-design.md`. Implementation begins after user approval.
+- 2026-05-12: Last.fm tag enrichment implemented on `feature/lastfm-tag-enrichment` branch. `Artist` redesigned (raw `tags` + derived `genres` property); `LastFmClient` added (FileCache-backed, 365-day TTL); `SpotifyClient` gained optional `genre_enricher`; `TagAnalyzer` added; `PlaylistAnalyzer.run_all/plot_all` skip Tag/Genre panels when LASTFM_API_KEY is unset. See [implementation plan](docs/superpowers/plans/2026-05-12-lastfm-tag-enrichment.md).
