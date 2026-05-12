@@ -65,6 +65,7 @@ class SpotifyClient:
         self,
         sp: spotipy.Spotify,
         cache: FileCache,
+        *,
         genre_enricher: LastFmClient | None = None,
     ) -> None:
         self.sp = sp
@@ -259,12 +260,12 @@ class SpotifyClient:
     def _enrich_with_artists(self, track_items: list[dict[str, Any]], *, force_refresh: bool = False) -> list[Track]:
         """Filter to audio tracks, resolve artist lookups, and return Track objects.
 
-        Two pipelines run in sequence: filter to audio tracks → collect unique
-        artist IDs → batch-fetch Spotify artists via ``fetch_artists()`` →
-        if a ``genre_enricher`` was injected, additionally call
-        ``LastFmClient.fetch_artist_tags`` per artist and rebuild the in-memory
-        artist map with populated ``tags``. The Spotify-side cache is never
-        modified; enrichment lives entirely in memory.
+        One pipeline runs in two stages: filter to audio tracks → collect unique
+        artist IDs → batch-fetch Spotify artists via ``fetch_artists()``. If
+        ``genre_enricher`` is set, a second pass over the resolved artists calls
+        ``LastFmClient.fetch_artist_tags`` per artist and rebuilds the in-memory
+        artist map with populated ``tags``; the Spotify-side cache is never
+        modified.
 
         Args:
             track_items: Raw playlist-item dicts using the ``item`` key schema.
