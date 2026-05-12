@@ -12,9 +12,9 @@ Phase 2 (later, maybe): A small web UI to do the same analyses interactively, pl
 
 | Criterion | Pts | How we satisfy it |
 | --- | --- | --- |
-| OOP design — 2–3 classes with meaningful inheritance | 4 | **Option B (chosen):** `Analyzer` (ABC) → 5 concrete subclasses with overridden `analyze()` + `plot()` methods (Strategy pattern). Plus `SpotifyClient`, `FileCache`, `PlaylistAnalyzer` orchestrator. Track/Playlist/Artist as plain `@dataclass(frozen=True, slots=True)`. Real polymorphism in `PlaylistAnalyzer.run_all()`. See [Phase 1 design spec](docs/superpowers/specs/2026-04-30-spotify-phase1-design.md). |
+| OOP design — 2–3 classes with meaningful inheritance | 4 | **Option B (chosen):** `Analyzer` (ABC) → 6 concrete subclasses with overridden `analyze()` + `plot()` methods (Strategy pattern): Genre, Tag, Year, Artist, Duration, Timeline. Plus `SpotifyClient`, `FileCache`, `PlaylistAnalyzer` orchestrator. Track/Playlist/Artist as plain `@dataclass(frozen=True, slots=True)`. Real polymorphism in `PlaylistAnalyzer.run_all()`. See [Phase 1 design spec](docs/superpowers/specs/2026-04-30-spotify-phase1-design.md). |
 | Internet data access (public API, programmatic) | 4 | Spotify Web API via `spotipy` |
-| Robustness & validation (try/except, retries, malformed data) | shares slot | spotipy session retries, graceful 403/429 handling, Pydantic at boundaries |
+| Robustness & validation (try/except, retries, malformed data) | shares slot | spotipy session retries, graceful 403/429 handling, `LastFmClient` retry + not-found graceful degrade, `FileCache` corrupt-entry recovery, `Track.__post_init__` invariant guard |
 | Pandas analysis + ≥ 1 visualization | 4 | DataFrame of tracks; matplotlib plots (year histogram, genre bar, etc.) |
 | Code quality — ≥ 3 meaningful unit tests | 4 | `pytest` in `tests/` |
 | Presentation — both members can explain any line | 4 | Keep code small and explainable; avoid black-box AI dumps |
