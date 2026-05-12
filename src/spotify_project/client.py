@@ -140,7 +140,7 @@ class SpotifyClient:
         """Fetch a playlist by ID, fully enriched with Artist objects.
 
         Two-phase: paginated track fetch, then a batched artist fetch for unique artist IDs across all tracks.
-        Each Track ends up holding full ``Artist`` references (with genres) — callers can read ``track.primary_artist.genres`` directly.
+        Each Track ends up holding full ``Artist`` references — callers can read ``track.primary_artist.tags`` and ``.genres`` directly (genres is derived from tags via Last.fm enrichment when enabled).
         Cached with default TTL (see ``FileCache``); pass ``force_refresh=True`` to bypass.
 
         Args:
@@ -211,7 +211,8 @@ class SpotifyClient:
                     "added_at": it.get("added_at"),
                     "is_local": False,
                 }
-                for it in raw_items if it.get("track")
+                for it in raw_items
+                if it.get("track")
             ]
             if dropped > 0:
                 logger.info("Dropped %d null tracks from liked songs", dropped)

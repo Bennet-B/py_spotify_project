@@ -60,6 +60,7 @@ def test_playlist_paginates_and_enriches_artists(tmp_path: Path) -> None:
     first = playlist.tracks[0].primary_artist
     assert first is not None
     assert first.name == "Artist 1"
+    assert first.tags == ()
 
 
 def test_from_env_raises_on_missing_credentials(
@@ -131,6 +132,7 @@ def test_liked_songs_paginates_and_synthesizes_pseudo_playlist(tmp_path: Path) -
     first = playlist.tracks[0].primary_artist
     assert first is not None
     assert first.name == "Artist 1"
+    assert first.tags == ()
 
 
 def test_artists_uses_long_ttl_for_cached_entries(tmp_path: Path) -> None:

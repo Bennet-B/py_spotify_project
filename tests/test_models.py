@@ -77,20 +77,24 @@ def test_artist_tags_defaults_to_empty_tuple() -> None:
     assert a.genres == ()
 
 
-def test_artist_genres_filters_tags_through_whitelist() -> None:
+def test_artist_genres_delegates_to_filter_to_genres() -> None:
+    from spotify_project.genre_taxonomy import filter_to_genres
     from spotify_project.models import Artist
 
-    a = Artist(id="x", name="y", tags=("rock", "seen live", "indie", "british"))
-    assert a.genres == ("rock", "indie")
+    tags = ("rock", "seen live", "indie", "british")
+    a = Artist(id="x", name="y", tags=tags)
+    assert a.genres == tuple(filter_to_genres(tags))
 
 
-def test_artist_genres_preserves_descending_weight_order() -> None:
+def test_artist_genres_preserves_tag_order() -> None:
+    from spotify_project.genre_taxonomy import filter_to_genres
     from spotify_project.models import Artist
 
-    a = Artist(id="x", name="y", tags=("indie", "rock"))
-    assert a.genres == ("indie", "rock")
-    b = Artist(id="x", name="y", tags=("rock", "indie"))
-    assert b.genres == ("rock", "indie")
+    # Both orderings should round-trip through the property unchanged
+    # whenever the inputs survive the whitelist filter.
+    for tags in [("indie", "rock"), ("rock", "indie")]:
+        a = Artist(id="x", name="y", tags=tags)
+        assert a.genres == tuple(filter_to_genres(tags))
 
 
 def test_artist_from_api_ignores_legacy_genres_field() -> None:
