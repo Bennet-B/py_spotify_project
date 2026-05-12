@@ -2,10 +2,9 @@ from __future__ import annotations
 
 GENRE_WHITELIST: frozenset[str] = frozenset(
     {
-        # Baseline of widely-recognized genres. Iteratively refined during the
-        # tag-cleaning notebook session (compare Top Tags vs Top Genres panels).
-        # All entries lowercase; LastFmClient lowercases tags before they reach
-        # this filter.
+        # Widely-recognized genre names, all lowercase. Add entries as needed.
+        # LastFmClient lowercases tags before they reach this filter, so the
+        # filter does a pure membership check with no normalization.
         "rock",
         "pop",
         "indie",
