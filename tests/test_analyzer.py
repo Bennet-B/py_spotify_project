@@ -126,8 +126,8 @@ def test_from_playlist_exposes_artist_id_and_name_lists() -> None:
 
     from spotify_project.models import Artist, Playlist, Track
 
-    a1 = Artist(id="a1", name="Alice", genres=("rock",))
-    a2 = Artist(id="a2", name="Bob", genres=("indie",))
+    a1 = Artist(id="a1", name="Alice", tags=("rock",))
+    a2 = Artist(id="a2", name="Bob", tags=("indie",))
     track = Track(
         id="t1",
         name="Song",
