@@ -328,7 +328,8 @@ class SpotifyClient:
                     "added_at": it.get("added_at"),
                     "is_local": False,
                 }
-                for it in raw_items if it.get("track")
+                for it in raw_items
+                if it.get("track")
             ]
             if dropped > 0:
                 logger.info("Dropped %d null tracks from liked songs", dropped)
@@ -379,7 +380,7 @@ class SpotifyClient:
         if self.genre_enricher is not None:
             logger.info("Enriching %d artists with Last.fm tags", len(artist_by_id))
             enriched: dict[str, Artist] = {}
-            iter_artists: Iterable[Artist] = _tqdm_cls(artist_by_id.values(), desc="Enriching with Last.fm tags", unit="artist") # pyright: ignore[reportUnknownVariableType]
+            iter_artists: Iterable[Artist] = _tqdm_cls(artist_by_id.values(), desc="Enriching with Last.fm tags", unit="artist")  # pyright: ignore[reportUnknownVariableType]
             for artist in iter_artists:
                 tags = self.genre_enricher.fetch_artist_tags(artist.id, artist.name, force_refresh=force_refresh)
                 enriched[artist.id] = replace(artist, tags=tags)

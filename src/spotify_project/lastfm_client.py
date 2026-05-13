@@ -126,8 +126,7 @@ class LastFmClient:
             message = data.get("message", "<no message>")
             raise RuntimeError(f"Last.fm error {error_code} for artist {artist_name!r}: {message}")
         raise RuntimeError(
-            f"Last.fm rate-limit persisted after a {self.RATE_LIMIT_DELAY_SECONDS * 5:.1f}s retry for artist {artist_name!r}; "
-            "aborting. Re-run the notebook after a short cooldown."
+            f"Last.fm rate-limit persisted after a {self.RATE_LIMIT_DELAY_SECONDS * 5:.1f}s retry for artist {artist_name!r}; aborting. Re-run the notebook after a short cooldown."
         )
 
     def _call_get_top_tags(self, artist_name: str) -> dict[str, Any]:

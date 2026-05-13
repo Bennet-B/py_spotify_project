@@ -12,7 +12,7 @@ Phase 2 (later, maybe): A small web UI to do the same analyses interactively, pl
 
 | Criterion | Pts | How we satisfy it |
 | --- | --- | --- |
-| OOP design — 2–3 classes with meaningful inheritance | 4 | **Option B (chosen):** `Analyzer` (ABC) → 6 concrete subclasses with overridden `analyze()` + `plot()` methods (Strategy pattern): Genre, Tag, Year, Artist, Duration, Timeline. Plus `SpotifyClient`, `FileCache`, `PlaylistAnalyzer` orchestrator. Track/Playlist/Artist as plain `@dataclass(frozen=True, slots=True)`. Real polymorphism in `PlaylistAnalyzer.run_all()`. See [Phase 1 design spec](docs/superpowers/specs/2026-04-30-spotify-phase1-design.md). |
+| OOP design — 2–3 classes with meaningful inheritance | 4 | **Option B (chosen):** `Analyzer` (ABC) → 6 concrete subclasses with overridden `analyze()` + `plot()` methods (Strategy pattern): Genre, Tag, Year, Artist, Duration, Timeline. Plus `SpotifyClient`, `FileCache`, `LastFmClient`, `PlaylistAnalyzer` orchestrator. `Track`, `Playlist`, `Artist`, `User`, `PlaylistSummary` as plain `@dataclass(frozen=True, slots=True)`. Real polymorphism in `PlaylistAnalyzer.run_all()`. See [Phase 1 design spec](docs/superpowers/specs/2026-04-30-spotify-phase1-design.md). |
 | Internet data access (public API, programmatic) | 4 | Spotify Web API via `spotipy` |
 | Robustness & validation (try/except, retries, malformed data) | shares slot | spotipy session retries, graceful 403/429 handling, `LastFmClient` retry + not-found graceful degrade, `FileCache` corrupt-entry recovery, `Track.__post_init__` invariant guard |
 | Pandas analysis + ≥ 1 visualization | 4 | DataFrame of tracks; matplotlib plots (year histogram, genre bar, etc.) |
@@ -28,9 +28,24 @@ Deliverables: Git repo with `src/`, `notebooks/`, `tests/`, README. Final presen
 - `spotipy` — Spotify Web API client, handles OAuth
 - `pandas` + `matplotlib` + `seaborn` — analysis + plots
 - `python-dotenv` — load credentials from `.env`
+- `tqdm` — progress bar during Last.fm artist enrichment (~7 min for a fresh ~2 000-artist library)
+- `pyarrow` — pandas Arrow-backed dtype support (transitive but pinned)
 - `pytest` — tests
 - `jupyter` / `ipykernel` — for the notebook
 - (Phase 2) `streamlit` or `fastapi` + minimal HTML — TBD
+
+## Commands
+
+Run from the repo root using the venv's interpreter (Windows / Linux paths differ):
+
+```bash
+.venv/Scripts/python.exe -m pytest -q          # tests (Windows)
+.venv/bin/python -m pytest -q                  # tests (macOS / Linux)
+ruff check                                      # lint
+ruff format                                     # format
+pyright                                         # type check (strict)
+jupyter notebook notebooks/01_explore_playlist.ipynb
+```
 
 ## Spotify API gotchas — IMPORTANT
 
@@ -56,35 +71,45 @@ The Spotify Web API was significantly cut down in late 2024 / early 2026. Read t
 - Scopes needed for Phase 1 (read-only): `user-read-private`, `user-read-email`, `playlist-read-private`, `playlist-read-collaborative`, `user-library-read`, `user-top-read`.
 - Scopes added in Phase 2 (mutation): `playlist-modify-private`, `playlist-modify-public`.
 
-## Project structure (proposed)
+## Project structure
 
 ```
 py_spotify_project/
 ├── .env                       # gitignored
 ├── .env.example
-├── .gitignore                 # .env, .cache, .venv/, __pycache__/, *.ipynb_checkpoints
+├── .gitignore                 # .env, .cache*, .venv/, docs/, __pycache__/, *.ipynb_checkpoints
 ├── README.md
+├── CLAUDE.md
 ├── requirements.txt
-├── pyproject.toml             # ruff + pyright config
-├── docs/
+├── pyproject.toml             # ruff + pyright + pytest config
+├── docs/                      # gitignored — local working notes, not shipped
+│   ├── INFPROG2 FS26 Semester Project Guide.txt
+│   ├── chat_histories/        # archived Claude session transcripts
+│   ├── week_10_infodump/      # course materials / lecture extracts
 │   └── superpowers/
-│       └── specs/
-│           └── 2026-04-30-spotify-phase1-design.md
+│       ├── plans/             # implementation plans (one per sprint)
+│       └── specs/             # design specs
 ├── src/
 │   └── spotify_project/
 │       ├── __init__.py
 │       ├── analyzer.py        # Analyzer (ABC) + 6 subclasses + PlaylistAnalyzer orchestrator
-│       ├── cache.py           # FileCache — file-based API response cache (7-day TTL)
+│       ├── cache.py           # FileCache — file-based JSON cache with TTL
 │       ├── client.py          # SpotifyClient — auth, fetch, retry, pagination
 │       ├── genre_taxonomy.py  # GENRE_WHITELIST + filter_to_genres
-│       ├── lastfm_client.py   # LastFmClient — optional Last.fm enrichment
-│       └── models.py          # @dataclass Track, Playlist, Artist (no inheritance)
+│       ├── lastfm_client.py   # LastFmClient — optional Last.fm tag enrichment
+│       ├── logging_setup.py   # RedactAuthFilter + TqdmLoggingHandler
+│       └── models.py          # @dataclass Track, Playlist, Artist, User, PlaylistSummary
 ├── notebooks/
-│   └── 01_explore_user_account.ipynb
+│   └── 01_explore_playlist.ipynb
 └── tests/
-    ├── test_models.py
     ├── test_analyzer.py
-    └── test_client.py         # mocked
+    ├── test_cache.py
+    ├── test_client.py            # mocked spotipy
+    ├── test_genre_taxonomy.py
+    ├── test_lastfm_client.py
+    ├── test_logging_setup.py
+    ├── test_models.py
+    └── test_playlist_analyzer.py
 ```
 
 ## Style anchors
@@ -101,12 +126,18 @@ py_spotify_project/
 
 ## Reference materials in this repo
 
+The entire `docs/` directory is **gitignored** — these are local working notes that aren't shipped. A fresh clone won't have them.
+
 - `docs/superpowers/specs/2026-04-30-spotify-phase1-design.md` — **authoritative Phase 1 design spec** (start here)
-- `INFPROG2 FS26 Semester Project Guide.txt` — official course brief (root)
-- `week_10_infodump/PROG2_SUMMARY.md` — condensed course summary; especially §5 (OOP), §7 (HTTP), §8 (validation), §9 (pandas), §15 (semester-project rubric)
-- `week_10_infodump/_extracted/` — full lecture notebooks and lab solutions (gitignored)
+- `docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md` — Last.fm enrichment spec
+- `docs/superpowers/plans/` — one implementation plan per sprint, plus the Last.fm enrichment plan
+- `docs/chat_histories/` — archived Claude session transcripts from each sprint
+- `docs/INFPROG2 FS26 Semester Project Guide.txt` — official course brief
+- `docs/week_10_infodump/PROG2_SUMMARY.md` — condensed course summary; especially §5 (OOP), §7 (HTTP), §8 (validation), §9 (pandas), §15 (semester-project rubric)
+- `docs/week_10_infodump/_extracted/` — full lecture notebooks and lab solutions
 
 ## Current status
 
 - 2026-04-30: Project initialized; Phase 1 design completed via superpowers brainstorming. Pivoted from Option A (SpotifyResource hierarchy) to Option B (Analyzer hierarchy) — better-defended OOP, real polymorphism. Dropped pydantic; added FileCache. Spec at `docs/superpowers/specs/2026-04-30-spotify-phase1-design.md`. Implementation begins after user approval.
 - 2026-05-12: Last.fm tag enrichment implemented on `feature/lastfm-tag-enrichment` branch. `Artist` redesigned (raw `tags` + derived `genres` property); `LastFmClient` added (FileCache-backed, 365-day TTL); `SpotifyClient` gained optional `genre_enricher`; `TagAnalyzer` added; `PlaylistAnalyzer.run_all/plot_all` skip Tag/Genre panels when LASTFM_API_KEY is unset. See [implementation plan](docs/superpowers/plans/2026-05-12-lastfm-tag-enrichment.md).
+- 2026-05-13: Last.fm enrichment merged to `main` via PR #1. Test suite restructured around per-module files (`test_playlist_analyzer.py` split out from `test_analyzer.py`; added `test_logging_setup.py`, `test_genre_taxonomy.py`, `test_cache.py`, `test_lastfm_client.py`). `.gitignore` cleaned up — `docs/` is now explicitly local-only. Phase 1 implementation effectively complete; remaining work is documentation polish, README slim-down, and final presentation prep.

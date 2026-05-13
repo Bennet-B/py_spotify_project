@@ -1,226 +1,115 @@
 # py_spotify_project
 
-A Python toolkit for analyzing your own Spotify account: playlists, genres, listening history, track ages, and more — built as the **INFPROG2 FS26 semester project** (ZHAW).
+A Python toolkit for analyzing your own Spotify account — playlists, genres, listening history, release-year distribution and "added at" timelines.
 
-The repo will grow in two phases:
+## About
 
-1. **A Jupyter notebook** that authenticates you, pulls your playlists, and produces a stack of charts and stats about them.
-2. **A small web UI** (Streamlit or FastAPI — TBD) that does the same interactively, plus playlist organization features: split, merge, dedupe, re-sort.
+A learning project, written to exercise a specific set of Python topics end-to-end:
 
-## A note about the Spotify Web API in 2026 — what happened and why it shaped this codebase
+- **OOP** — abstract base class + concrete subclasses (Strategy pattern), frozen dataclasses, real polymorphism
+- **HTTP / REST** — a real third-party API, OAuth2 authorization-code flow, pagination, retries, rate limits
+- **Caching** — file-based JSON cache with TTL so the API isn't hammered on every notebook run
+- **Data** — `pandas` for analysis, `matplotlib` + `seaborn` for charts
+- **Robustness** — input validation, defensive parsing, graceful degradation when an optional service is missing
+- **Tooling** — `pytest` (with mocks for the HTTP layer), `pyright` strict, `ruff` for lint + format
 
-This is a quick history of constraints, not just a list of missing features. Each cutback changed how the code had to be written.
+## The Spotify Web API in 2026 — what shaped this codebase
 
-### The timeline
+Spotify cut significant functionality from the Web API across 2024–2026. The constraints below explain several design choices in `src/`.
 
-**November 27, 2024** — Spotify removed the richest analysis endpoints for any developer app registered from that point on (announced on the [Spotify for Developers blog](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api)):
+### What's gone
 
-- `audio-features` — danceability, energy, valence, tempo, key, acousticness, instrumentalness, loudness, etc.
-- `audio-analysis` — bar / beat / segment-level structural data
-- `recommendations` — "give me tracks like these"
-- `related-artists`
+**Nov 27, 2024 — deprecated for new apps** ([announcement](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api)). Apps registered after this date receive `403 Forbidden` from:
+
+- `audio-features` (danceability, energy, valence, tempo, key, acousticness…)
+- `audio-analysis` (bar / beat / segment data)
+- `recommendations`, `related-artists`
 - featured / category playlists, genre seeds
 - 30-second preview URLs in multi-get responses
 
-Apps grandfathered before that date kept access, but we're a new app, so these return `403 Forbidden`.
+**Through 2025 — silent field strip** (no migration notice; observed empirically and confirmed by inspecting our cached responses on 2026-05-07):
 
-**Through 2025 — silent field strip.** In addition to the formally-announced deprecations, two **fields** that the documentation still lists started returning empty (or being omitted entirely) from the responses our app receives:
+- `genres` on the artist object — now returned empty
+- `popularity` on tracks and artists — now absent from the payload
 
-- `genres` on the artist object (`GET /artists/{id}`)
-- `popularity` on both track and artist objects
+**Feb 2026** — the batch-artists endpoint (`GET /artists?ids=…`) was removed for new apps. Fetching one playlist's worth of artists became one HTTP call per artist.
 
-There was no blog post or migration notice for this — it's been observed empirically across the developer community throughout 2025 and confirmed for this project by inspecting our cached responses on 2026-05-07.
+### How that shaped the code
 
-**February 2026** — Spotify removed the batch-artists endpoint (`GET /artists?ids=...`) for new apps. What had been a single round-trip for a whole playlist's worth of artists became **one HTTP call per artist**. A 3 000-track library can reference 2 000+ unique artists; at one request per artist the naive approach would be extremely slow.
+- **Caching is load-bearing.** Each artist costs a real round-trip, so `FileCache` keeps artist responses for 365 days. Cached entries cover an entire year of notebook runs from a single fetch.
+- **Rate limits dictate pacing.** The client paces artist fetches at ~4 req/s and prints progress via `tqdm`; a fresh ~2 000-artist library takes ~7 minutes and must be run over several sessions to allow the cache to fill.
+- **Genres come from Last.fm.** Since Spotify's `artist.genres` field is empty, we enrich via Last.fm's `artist.getTopTags`. Raw tags surface in a `Top Tags` panel; a curated whitelist (`genre_taxonomy.py`) filters them into a `Top Genres` panel. The project runs without a Last.fm key — those two panels are simply skipped with an INFO log line.
+- **No dead code for deprecated endpoints.** `get_audio_features`, `recommendations`, `related_artists`, and similar are not in `src/` at all. We don't ship code we can't test.
 
-### How the cutbacks shaped the design
+### What's still here
 
-**Caching became load-bearing, not nice-to-have.**
-Before the Feb 2026 change, artist data was cheap — one call, all artists. Now every uncached artist costs a real API round-trip. `FileCache` stores each artist for 365 days so the per-artist cost is paid once and amortized over an entire year of notebook runs.
+User profile; all playlists (private + collaborative + saved); every track with name / artists / album / release date / duration / explicit flag / added-at timestamp; per-artist metadata; saved tracks; top artists; top tracks; recently played.
 
-**Rate limits are now the binding constraint.**
-With one request per artist, the client must throttle. Artist fetches are spaced 250 ms apart (~4 req/s) to stay well inside Spotify's rolling-window rate limit. The progress bar (via `tqdm` if installed) and INFO log lines exist specifically because fetching a fresh playlist with 500+ unique artists takes over two minutes — without feedback the notebook would look frozen.
-
-**Genre data moved off Spotify entirely.**
-Spotify has never exposed genre at the track level — historically genres lived on the *artist* object, and we'd surface a track's genre by looking up its primary artist. The 2025 silent-field strip closed off that path too: the `genres` field on `GET /artists/{id}` is now empty. Genres are sourced from Last.fm's `artist.getTopTags` endpoint — see "Restoring genres (and adding tags) via Last.fm" below for details.
-
-**Popularity analysis is gone.**
-Track and artist `popularity` were both stripped (see timeline above). `PopularityAnalyzer` previously binned the 0-100 score into a histogram; with every track now reading as 0, the chart degenerated to a single bar. Per the project's no-dead-API-code policy, the analyzer and the field have been removed from the codebase rather than kept as a stub.
-
-### Restoring genres (and adding tags) via Last.fm
-
-Genres are re-sourced from Last.fm's `artist.getTopTags` endpoint, and raw
-tags are surfaced as a separate analysis:
-
-- ~95% per-artist coverage for typical Spotify libraries (mainstream + indie).
-- One-time enrichment cost: ~7 minutes for ~2000 unique artists.
-- Cached for 365 days under `.cache/api/lastfm_artist/<spotify_artist_id>.json`.
-- `Top Tags` panel: raw Last.fm tags (eras, geography, moods, real genres).
-- `Top Genres` panel: tags filtered through a curated whitelist in
-  `src/spotify_project/genre_taxonomy.py`. Whitelist edits take effect
-  instantly — no re-enrichment needed.
-
-**To enable Last.fm locally:** register at
-<https://www.last.fm/api/account/create> and set `LASTFM_API_KEY` in `.env`.
-The project runs fine without a Last.fm key — the `Top Tags` and `Top Genres`
-panels are skipped with an INFO log line.
-
-**Caveat:** Last.fm's audience skews Western and indie, so the tag
-distribution is biased that way. For mainstream pop and indie rock the data
-is excellent; for K-pop, classical, and very-niche electronic the tag set
-is sparser and less precise.
-
-### What this means for the codebase
-
-We do not implement endpoints we cannot exercise. There is no `get_audio_features()` method, no `recommendations()` method, no `related_artists()` method anywhere in `src/spotify_project/`. We did not add try/catch wrappers, feature flags, or "if available" branches for these features either. **Untested code is technical debt the moment it lands**, so we keep the codebase clean and document the constraint here once. If Spotify ever restores access (or we get a grandfathered app), adding the code is a small follow-up; until then it would be code we cannot test, run, or defend.
-
-### What we can still do (and it's plenty)
-
-The endpoints we *do* still have access to give us:
-
-- User profile: display name, follower count, country
-- All your playlists (private + collaborative + saved)
-- Every track of every playlist with: name, artists, album, release date, duration, explicit flag, **timestamp when you added it**
-- Per-artist data: id, name, images (no `genres`, no `popularity`)
-- Saved tracks, top artists, top tracks, recently played
-
-That gives us:
-
-- **Release-year & decade distribution** — how old is your music?
-- **Top artists** (track count and total minutes)
-- **Top genres**
-- **Total duration** of each playlist; explicit ratio
-- **"Added at" timeline** — how a playlist evolved over time
-- **Cross-playlist comparison** — pick three and see who has the oldest songs, the most variety, the longest runtime
-
-So no mood-map and no popularity histogram, but a perfectly rich semester-project worth of analysis — genres and tags sourced from Last.fm.
+That gives us: release-year & decade distribution, top artists (count and minutes), top genres + tags, total duration & explicit ratio, "added at" timeline, and cross-playlist comparison.
 
 ## How to run
 
 ### Prerequisites
 
-- Python 3.11 or later
-- A Spotify Developer App — register one at <https://developer.spotify.com/dashboard>
+- Python 3.11+
+- A Spotify developer app — register at <https://developer.spotify.com/dashboard>
+- *(Optional - but highly recommended)* a Last.fm API key for genre / tag enrichment — register at <https://www.last.fm/api/account/create>
 
 ### Setup
 
-1. Clone the repo and enter the directory:
-   ```
-   git clone <repo-url> py_spotify_project
-   cd py_spotify_project
-   ```
+```bash
+# clone + venv
+git clone <repo-url> py_spotify_project
+cd py_spotify_project
+python -m venv .venv
 
-2. Create and activate a virtual environment:
-   ```
-   # Windows
-   python -m venv .venv
-   .venv\Scripts\activate
+# activate (Windows)
+.venv\Scripts\activate
+# activate (macOS / Linux)
+source .venv/bin/activate
 
-   # macOS / Linux
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
+# install deps
+pip install -r requirements.txt
 
-3. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+# credentials
+cp .env.example .env
+```
 
-4. Register a Spotify app (if you don't have one):
-   - Go to <https://developer.spotify.com/dashboard> → "Create app"
-   - Set the redirect URI to `http://127.0.0.1:8888/callback`
-   - Copy your `client_id` and `client_secret`
+Then edit `.env` and fill in:
 
-5. Configure credentials:
-   ```
-   cp .env.example .env
-   ```
-   Then edit `.env` and fill in:
-   - `SPOTIPY_CLIENT_ID` — from the dashboard
-   - `SPOTIPY_CLIENT_SECRET` — from the dashboard
-   - `SPOTIPY_REDIRECT_URI` — e.g. `http://127.0.0.1:8888/callback`
+- `SPOTIPY_CLIENT_ID` / `SPOTIPY_CLIENT_SECRET` — from the developer dashboard
+- `SPOTIPY_REDIRECT_URI` — must match the URI registered on the dashboard (e.g. `http://127.0.0.1:8888/callback`)
+- `LASTFM_API_KEY` — optional; enables the `Top Tags` and `Top Genres` panels
 
 ### Run the notebook
 
-```
+```bash
 jupyter notebook notebooks/01_explore_playlist.ipynb
 ```
 
-- The first run opens a browser for OAuth; grant the scopes.
-- Subsequent runs use the cached token at `.cache/spotify_token` and don't prompt.
-- To analyze a different playlist, replace the `PLAYLIST_ID` in the fetch cell with one of your own playlist IDs (visible in the playlist-list cell's output).
-- To analyze your "Liked Songs" instead, set `PLAYLIST_ID = "__liked__"`.
+- First run opens a browser for OAuth; subsequent runs read the cached token from `.cache/spotify_token`.
+- To analyze a different playlist, replace `PLAYLIST_ID` in the fetch cell. Use `"__liked__"` for your Liked Songs.
 
-### Code quality
+### Quality checks
 
-The project uses strict linting and type checking:
-
-```
-ruff check                                      # Lint
-ruff format                                     # Format (Black-compatible)
-pyright                                         # Type check (strict mode)
-.venv/Scripts/python.exe -m pytest -q          # Tests (Windows)
-.venv/bin/python -m pytest -q                  # Tests (macOS / Linux)
+```bash
+ruff check                                     # lint
+ruff format                                    # format (Black-compatible)
+pyright                                        # type check (strict mode)
+.venv/Scripts/python.exe -m pytest -q          # tests (Windows)
+.venv/bin/python -m pytest -q                  # tests (macOS / Linux)
 ```
 
 See `pyproject.toml` for tooling configuration.
 
-### Run the test suite
-
-```
-.venv/Scripts/python.exe -m pytest -q          # Windows
-.venv/bin/python -m pytest -q                  # macOS / Linux
-```
-
-All tests should pass.
-
 ## Modules
 
-- `src/spotify_project/cache.py` — `FileCache`, a simple file-based JSON cache with TTL
-- `src/spotify_project/client.py` — `SpotifyClient`, OAuth + API access via `spotipy` (playlists, liked songs, artists)
+- `src/spotify_project/cache.py` — `FileCache` (file-based JSON cache with TTL)
+- `src/spotify_project/client.py` — `SpotifyClient` (OAuth, paged fetch, retries, optional genre enricher)
+- `src/spotify_project/lastfm_client.py` — `LastFmClient` (optional Last.fm `artist.getTopTags` enrichment)
 - `src/spotify_project/models.py` — `Track`, `Playlist`, `Artist`, `User`, `PlaylistSummary` (frozen dataclasses)
-- `src/spotify_project/analyzer.py` — `Analyzer` ABC + six concrete analyzers (Genre, Tag, Year, Artist, Duration, Timeline) + `PlaylistAnalyzer` orchestrator. Includes plotting.
-- `src/spotify_project/genre_taxonomy.py` — `GENRE_WHITELIST` + `filter_to_genres` (curated whitelist used by `GenreAnalyzer`).
-- `src/spotify_project/lastfm_client.py` — `LastFmClient`, the optional Last.fm `artist.getTopTags` enrichment used by `SpotifyClient` when `LASTFM_API_KEY` is set.
-- `tests/` — pytest unit tests
+- `src/spotify_project/analyzer.py` — `Analyzer` ABC + six concrete analyzers (Genre, Tag, Year, Artist, Duration, Timeline) + `PlaylistAnalyzer` orchestrator
+- `src/spotify_project/genre_taxonomy.py` — `GENRE_WHITELIST` + `filter_to_genres`
+- `src/spotify_project/logging_setup.py` — auth-header redaction filter + `tqdm`-compatible log handler
 - `notebooks/01_explore_playlist.ipynb` — demo notebook
-
-## Course grading map (20 pts)
-
-| Criterion | Pts | Where in this repo |
-| --- | --- | --- |
-| OOP design (classes, inheritance) | 4 | `src/spotify_project/models.py`, `client.py`, `analyzer.py` |
-| Internet data access (API + robustness) | 4 | `client.py` (spotipy session retries, 403/429 handling) |
-| Pandas analysis + visualization | 4 | `analyzer.py` (plotting included), notebook |
-| Code quality (≥ 3 unit tests, structure) | 4 | `tests/` |
-| Presentation + ability to explain | 4 | (final lab session) |
-
-## Phase 2 plans
-
-Phase 1 is a Jupyter notebook. Phase 2 is a small web UI with playlist-mutation features. A few decisions deferred from Phase 1 are recorded here so they land in the right place in the codebase when the time comes.
-
-### Async client migration
-
-The current `SpotifyClient` is synchronous. This is intentional for Phase 1: `spotipy` is a sync library, and Spotify's per-app rate limit means firing requests in parallel doesn't actually speed anything up — the API throttles us at the app level regardless of how many concurrent connections we open. Parallelism would be cosmetic at best.
-
-The calculation changes in a web UI: with multiple users hitting the server simultaneously, one user's slow artist fetch should not block another user's request. That's the point at which `async` pays off.
-
-The architecture is already laid out to make migration straightforward. `SpotifyClient` is cleanly separated from `models.py` (which is pure Python dataclasses) and `analyzer.py` (which is pure pandas). An async `AsyncSpotifyClient` can be a drop-in replacement that exposes the same `fetch_playlist()` / `fetch_liked_songs()` / `fetch_user_playlists()` interface — nothing in the analyzer layer would need to change.
-
-### Web UI framework
-
-Two realistic options, each with a different tradeoff:
-
-- **Streamlit** — pure Python, around 50 lines for a working interactive UI. Best if rapid iteration and demo speed matter more than architectural purity.
-- **FastAPI + minimal HTML/JS** — more setup, but a more realistic production stack. Better if we want to show "real" web-dev skills in the presentation.
-
-Decision deferred until Phase 1 is complete and delivered.
-
-### Mutation scopes
-
-Phase 1 uses read-only OAuth scopes. Phase 2 playlist-mutation features (create, split, merge, dedupe, re-sort) require two additional scopes:
-
-- `playlist-modify-private`
-- `playlist-modify-public`
-
-These are already documented in `CLAUDE.md` and will be added to `SpotifyClient.DEFAULT_SCOPES` when the first mutation feature lands.
+- `tests/` — pytest unit tests (one per module)
