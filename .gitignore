@@ -17,8 +17,8 @@ venv/
 .cache/
 .cache-*
 
-# Per-machine Claude Code permission overrides (personal, not team-shared)
-.claude/settings.local.json
+# claude settings
+.claude/
 
 # Notebooks
 .ipynb_checkpoints/
@@ -26,12 +26,8 @@ venv/
 # Generated data
 data/
 
-# Reference material from week 10 — too big for git, keep only the summary.md
-week_10_infodump/*.zip
-week_10_infodump/_extracted/
-
-# Exported chat transcripts (created by /export) — not part of the project
-*chat-history*.txt
+# Docs
+docs/
 
 # Local test output captures
 test_output.txt
