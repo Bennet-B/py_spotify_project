@@ -45,12 +45,50 @@ def test_fetch_artist_tags_returns_lowercased_tags_in_order(cache: FileCache) ->
     assert tags == ("electronic", "house", "french")
 
 
-def test_fetch_artist_tags_limits_to_default_top_n(cache: FileCache) -> None:
+def test_fetch_artist_tags_returns_full_list_no_top_n_truncation(cache: FileCache) -> None:
+    # The client used to slice to DEFAULT_TOP_N=10 at storage time; that was wrong (lost data we already paid to fetch).
+    # Slicing, if any, is now a downstream concern (e.g. TagAnalyzer's own top_n).
     client = LastFmClient(api_key="test-key", cache=cache)
     payload = {"toptags": {"tag": [{"name": f"tag{i}", "count": 100 - i} for i in range(20)]}}
     with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)):
         tags = client.fetch_artist_tags("x", "X")
-    assert len(tags) == LastFmClient.DEFAULT_TOP_N
+    assert len(tags) == 20
+    assert tags[0] == "tag0"
+    assert tags[-1] == "tag19"
+
+
+def test_fetch_artist_tags_applies_synonym_normalization(cache: FileCache) -> None:
+    client = LastFmClient(api_key="test-key", cache=cache)
+    payload = {
+        "toptags": {
+            "tag": [
+                {"name": "Hip-Hop", "count": 100},
+                {"name": "RNB", "count": 80},
+                {"name": "DnB", "count": 60},
+            ]
+        }
+    }
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)):
+        tags = client.fetch_artist_tags("x", "X")
+    assert tags == ("hip hop", "r&b", "drum and bass")
+
+
+def test_fetch_artist_tags_dedupes_normalized_variants_preserving_order(cache: FileCache) -> None:
+    # If Last.fm returns both "hip-hop" and "hip hop" for one artist, they collapse to a single entry at the earlier (higher-weight) position.
+    client = LastFmClient(api_key="test-key", cache=cache)
+    payload = {
+        "toptags": {
+            "tag": [
+                {"name": "rock", "count": 100},
+                {"name": "Hip-Hop", "count": 80},
+                {"name": "hip hop", "count": 60},
+                {"name": "Pop", "count": 40},
+            ]
+        }
+    }
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)):
+        tags = client.fetch_artist_tags("x", "X")
+    assert tags == ("rock", "hip hop", "pop")
 
 
 def test_fetch_artist_tags_caches_results(cache: FileCache) -> None:

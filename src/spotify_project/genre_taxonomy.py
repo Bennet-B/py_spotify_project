@@ -2,8 +2,9 @@ from __future__ import annotations
 
 GENRE_WHITELIST: frozenset[str] = frozenset(
     {
-        # Widely-recognized genre names, all lowercase. Add entries as needed.
-        # LastFmClient lowercases tags before they reach this filter, so the filter does a pure membership check with no normalization.
+        # Widely-recognized genre names, all lowercase, one canonical form per concept.
+        # LastFmClient pre-processes tags (lowercase + strip + TAG_SYNONYMS canonicalization + dedupe), so this filter is a pure membership check.
+        # When adding entries: pick the form that matches LastFmClient.TAG_SYNONYMS' RHS, not a synonym handled there.
         "rock",
         "pop",
         "indie",
@@ -29,9 +30,7 @@ GENRE_WHITELIST: frozenset[str] = frozenset(
         "soul",
         "funk",
         "r&b",
-        "rnb",
         "rap",
-        "hip-hop",
         "hip hop",
         "trap",
         "grime",
@@ -44,7 +43,6 @@ GENRE_WHITELIST: frozenset[str] = frozenset(
         "trance",
         "ambient",
         "drum and bass",
-        "dnb",
         "dubstep",
         "edm",
         "idm",

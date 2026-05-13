@@ -648,8 +648,7 @@ class PlaylistAnalyzer:
     def from_playlist(cls, playlist: Playlist, analyzers: list[Analyzer] | None = None) -> PlaylistAnalyzer:
         """Build a PlaylistAnalyzer from a Playlist by flattening tracks.
 
-        Each Track's ``primary_artist`` is read for the ``primary_artist_*``, ``tags``, and ``genres`` columns.
-        Local files (``is_local=True``) yield empty genres and ``None`` for artist IDs.
+        ``primary_artist_*`` columns come from the lead artist; ``tags`` and ``genres`` are the union (order-preserving dedup) across **all** artists on the track, so a featured artist's metadata isn't discarded. Local files (``is_local=True``) yield empty ``tags``/``genres`` and ``None`` for artist IDs.
 
         Args:
             playlist: Source Playlist with full Track + Artist data.
@@ -663,6 +662,9 @@ class PlaylistAnalyzer:
             primary = t.primary_artist
             release_date = t.release_date
             release_year: int | None = int(release_date[:4]) if release_date and release_date[:4].isdigit() else None
+            # Union all artists' tags/genres per track (order-preserving dedup). A featured artist's tags shouldn't be discarded just because they're not the lead.
+            track_tags = list(dict.fromkeys(tag for a in t.artists for tag in a.tags))
+            track_genres = list(dict.fromkeys(g for a in t.artists for g in a.genres))
             rows.append(
                 {
                     "track_id": t.id,
@@ -679,8 +681,8 @@ class PlaylistAnalyzer:
                     "explicit": t.explicit,
                     "added_at": t.added_at,
                     "is_local": t.is_local,
-                    "tags": list(primary.tags) if primary else [],
-                    "genres": list(primary.genres) if primary else [],
+                    "tags": track_tags,
+                    "genres": track_genres,
                 }
             )
         df = pd.DataFrame(rows)

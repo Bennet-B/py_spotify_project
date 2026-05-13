@@ -169,6 +169,40 @@ def test_from_playlist_materializes_tags_column() -> None:
     assert pa.df["genres"].iloc[0] == ["rock", "indie"]
 
 
+def test_from_playlist_unions_tags_across_all_track_artists() -> None:
+    # A featured artist's tags belong on the track too — primary-only would lose data we already fetched.
+    from spotify_project.analyzer import PlaylistAnalyzer
+    from spotify_project.models import Artist, Playlist, Track
+
+    primary = Artist(id="A1", name="Primary", tags=("rock", "indie", "british"))
+    feature = Artist(id="A2", name="Feature", tags=("pop", "indie", "00s"))
+    track = Track(
+        id="T1",
+        name="Track",
+        artists=(primary, feature),
+        album_name="Album",
+        release_date="2020-01-01",
+        duration_ms=200_000,
+        explicit=False,
+        added_at=None,
+        is_local=False,
+    )
+    playlist = Playlist(
+        id="P1",
+        name="P",
+        owner_display_name="",
+        public=False,
+        collaborative=False,
+        description="",
+        tracks=(track,),
+    )
+    pa = PlaylistAnalyzer.from_playlist(playlist)
+    # Primary's tags come first; feature's contributions follow, with duplicates ("indie") dropped at first occurrence.
+    assert pa.df["tags"].iloc[0] == ["rock", "indie", "british", "pop", "00s"]
+    # genres column: same union shape, filtered through the whitelist. "indie" is whitelisted; "british" and "00s" aren't.
+    assert pa.df["genres"].iloc[0] == ["rock", "indie", "pop"]
+
+
 def test_from_playlist_default_analyzers_include_tag_analyzer() -> None:
     from spotify_project.analyzer import PlaylistAnalyzer, TagAnalyzer
     from spotify_project.models import Playlist
