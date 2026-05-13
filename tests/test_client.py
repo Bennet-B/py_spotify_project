@@ -31,7 +31,10 @@ def _track_item(idx: int, artist_id: str = "a1") -> dict[str, Any]:
 
 
 def _saved_track_item(idx: int, artist_id: str = "a1") -> dict[str, Any]:
-    """Build a spotipy current_user_saved_tracks item — uses legacy 'track' key."""
+    """Build a spotipy current_user_saved_tracks item.
+
+    Uses the 'track' key (the saved-tracks endpoint never received the Feb 2026 rename, unlike the playlist endpoints which now use 'item').
+    """
     return {
         "track": {
             "id": f"st{idx}",

@@ -314,7 +314,9 @@ class SpotifyClient:
         if cached is None:
             logger.info("Fetching liked songs from API")
             first = self._sp_current_user_saved_tracks(limit=50)
-            # Convert legacy {"track": ...} → {"item": ...} so the rest of the pipeline (which reads item["item"]) can consume unchanged.
+            # Schema normalization: current_user_saved_tracks returns {"track": ...} per item, while the playlist endpoints return {"item": ...}
+            # (Feb 2026 rename — never propagated to the saved-tracks endpoint).
+            # Renaming the key here lets the rest of the pipeline (Track.from_api reads item["item"]) consume both sources uniformly.
             raw_items: list[dict[str, Any]] = list(first["items"])
             dropped = sum(1 for it in first["items"] if it.get("track") is None)
             page: dict[str, Any] = first
