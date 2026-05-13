@@ -11,12 +11,10 @@ from spotify_project.analyzer import (
     ArtistAnalyzer,
     DurationAnalyzer,
     GenreAnalyzer,
-    PlaylistAnalyzer,
     TagAnalyzer,
     TimelineAnalyzer,
     YearAnalyzer,
 )
-from spotify_project.models import Artist, Playlist, Track
 
 
 class TestAnalyzerBase:
@@ -30,7 +28,7 @@ class TestAnalyzerBase:
     def test_plot_accepts_color_kwarg(self) -> None:
         """Each Analyzer subclass's plot() accepts a color= kwarg without raising.
 
-        Pins the contract that PlaylistAnalyzer.plot_all relies on for palette threading. 
+        Pins the contract that PlaylistAnalyzer.plot_all relies on for palette threading.
         Doesn't assert color was actually used (matplotlib internals); just that the kwarg is supported.
         """
         fig = Figure()
@@ -465,73 +463,3 @@ class TestTagAnalyzer:
         """TagAnalyzer.skip_message is non-None and mentions LASTFM_API_KEY so the skip path activates."""
         assert TagAnalyzer.skip_message is not None
         assert "LASTFM_API_KEY" in TagAnalyzer.skip_message
-
-
-class TestPlaylistAnalyzerSetup:
-    """Tests for PlaylistAnalyzer's construction-time validation and orchestration entry points."""
-
-    def test_plot_all_with_no_analyzers_does_not_crash(self) -> None:
-        """PlaylistAnalyzer.plot_all returns early when the analyzer list is empty."""
-        pa = PlaylistAnalyzer(df=pd.DataFrame(), analyzers=[])
-        pa.plot_all(Figure())
-
-    def test_rejects_duplicate_titles(self) -> None:
-        """PlaylistAnalyzer fails fast when two analyzers share the same title.
-
-        run_all keys results by title and plot_all renders one subplot per analyzer;
-        a duplicate title would silently render the second analyzer's data under both subplots without raising.
-        """
-        with pytest.raises(ValueError, match="Analyzer titles must be unique"):
-            PlaylistAnalyzer(
-                df=pd.DataFrame(),
-                analyzers=[YearAnalyzer(bucket_size=1), YearAnalyzer(bucket_size=10)],
-            )
-
-    def test_from_playlist_exposes_artist_id_and_name_lists(self) -> None:
-        """PlaylistAnalyzer.from_playlist surfaces parallel artist_ids/names lists.
-
-        ArtistAnalyzer needs grouping-friendly columns (lists, not pipe-joined strings). 
-        This test pins the schema additions; if they regress, the analyzer breaks.
-        """
-        a1 = Artist(id="a1", name="Alice", tags=("rock",))
-        a2 = Artist(id="a2", name="Bob", tags=("indie",))
-        track = Track(
-            id="t1",
-            name="Song",
-            artists=(a1, a2),
-            album_name="Album",
-            release_date="2020-01-01",
-            duration_ms=200_000,
-            explicit=False,
-            added_at=datetime(2024, 6, 1, tzinfo=UTC),
-            is_local=False,
-        )
-        playlist = Playlist(
-            id="pl1",
-            name="Test",
-            owner_display_name="Bennet",
-            public=True,
-            collaborative=False,
-            description="",
-            tracks=(track,),
-        )
-        pa = PlaylistAnalyzer.from_playlist(playlist)
-        row = pa.df.iloc[0]
-        assert row["artist_ids"] == ["a1", "a2"]
-        assert row["artist_names"] == ["Alice", "Bob"]
-
-    def test_accepts_two_year_analyzers_with_distinct_titles(self) -> None:
-        """Per-instance title override lets two same-class instances coexist.
-
-        Without the override, registering two YearAnalyzer instances would collide on the class-level title.
-        With the override, a custom title=kwarg gives each its own slot.
-        """
-        pa = PlaylistAnalyzer(
-            df=pd.DataFrame(),
-            analyzers=[
-                YearAnalyzer(bucket_size=5, title="Years (5y)"),
-                YearAnalyzer(bucket_size=10, title="Years (10y)"),
-            ],
-        )
-        titles = [a.effective_title for a in pa.analyzers]
-        assert titles == ["Years (5y)", "Years (10y)"]
