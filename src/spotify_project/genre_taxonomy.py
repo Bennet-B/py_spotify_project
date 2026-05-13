@@ -29,7 +29,7 @@ GENRE_WHITELIST: frozenset[str] = frozenset(
         "blues",
         "soul",
         "funk",
-        "r&b",
+        "rnb",
         "rap",
         "hip hop",
         "trap",

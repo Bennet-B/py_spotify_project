@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import urllib.parse
 from typing import Any, ClassVar, cast
@@ -11,6 +12,9 @@ from urllib.request import Request, urlopen
 from .cache import FileCache
 
 logger = logging.getLogger(__name__)
+
+# Matches any char that's not a Unicode word char and not a space, OR an underscore. Word-class `\w` already covers letters and digits in any script (so accented tags like `björk` survive); underscore is a word char per Python regex but we treat it as a separator.
+_DISALLOWED_TAG_CHAR_RE: re.Pattern[str] = re.compile(r"[^\w ]|_")
 
 
 class LastFmClient:
@@ -28,14 +32,16 @@ class LastFmClient:
     CACHE_TTL_DAYS: ClassVar[float] = 365.0
     REQUEST_TIMEOUT_SECONDS: ClassVar[float] = 10.0
 
-    # Word-level synonyms applied AFTER generalized normalization (lowercase, strip, `_`/`-` → space, multi-space collapse). Add entries here only for genuine word-substitution cases, not for separator/casing variants — those are handled mechanically by ``_normalize_tag``.
+    # Word-level synonyms applied AFTER generalized normalization (lowercase, strip, every char that's not a word char or space becomes a space, multi-space collapse). Keys must already be in canonical form (lowercase, only word chars and single spaces). Add entries here only for genuine word-substitution cases, not for separator/casing/punctuation variants — those are handled mechanically by ``_normalize_tag``.
     TAG_SYNONYMS: ClassVar[dict[str, str]] = {
         "hiphop": "hip hop",
-        "rnb": "r&b",
-        "r and b": "r&b",
-        "dnb": "drum and bass",
+        # R&B: every spelling collapses to "r b" after &-stripping, plus "r and b" from the spelled-out form. Canonical chart label "rnb" is the most readable.
+        "r b": "rnb",
+        "r and b": "rnb",
+        # Drum and Bass: "drum & bass" → "drum bass" after &-stripping; "drum n bass" and "dnb" are abbreviation forms. Canonical "drum and bass" is the most readable.
+        "drum bass": "drum and bass",
         "drum n bass": "drum and bass",
-        "drum & bass": "drum and bass",
+        "dnb": "drum and bass",
     }
 
     def __init__(self, api_key: str, cache: FileCache) -> None:
@@ -172,15 +178,15 @@ class LastFmClient:
     def _normalize_tag(cls, raw_name: str) -> str:
         """Canonicalize a single raw tag.
 
-        Pipeline: lowercase + strip → replace ``_`` and ``-`` with space → collapse multi-space → ``TAG_SYNONYMS`` lookup. The separator rule handles all spelling variants of the same concept (``hip-hop``, ``hip_hop``, ``hip  hop`` all become ``hip hop``) without needing synonym entries; the synonym map is reserved for genuine word-level cases (``rnb`` → ``r&b``).
+        Pipeline: lowercase + strip → replace every non-word non-space character (and underscore) with space → collapse multi-space → ``TAG_SYNONYMS`` lookup. The character rule handles all separator and punctuation variants of the same concept (``hip-hop``, ``hip_hop``, ``rock'n'roll``, ``drum & bass`` all canonicalize without synonym entries); the synonym map is reserved for genuine word-level cases (``hiphop`` → ``hip hop``, ``r b`` → ``rnb``).
 
         Args:
             raw_name: Raw tag string from Last.fm.
 
         Returns:
-            Canonical form. Returns ``""`` when the input is all-whitespace so the caller can filter.
+            Canonical form. Returns ``""`` when the input is all-whitespace or all-disallowed-chars so the caller can filter.
         """
         normalized = raw_name.strip().lower()
-        normalized = normalized.replace("_", " ").replace("-", " ")
+        normalized = _DISALLOWED_TAG_CHAR_RE.sub(" ", normalized)
         normalized = " ".join(normalized.split())
         return cls.TAG_SYNONYMS.get(normalized, normalized)

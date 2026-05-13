@@ -70,7 +70,37 @@ def test_fetch_artist_tags_applies_synonym_normalization(cache: FileCache) -> No
     }
     with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)):
         tags = client.fetch_artist_tags("x", "X")
-    assert tags == ("hip hop", "r&b", "drum and bass")
+    # "Hip-Hop" -> hyphen replaced by space -> "hip hop". "RNB" stays "rnb". "DnB" lowercase "dnb" -> synonym -> "drum and bass".
+    assert tags == ("hip hop", "rnb", "drum and bass")
+
+
+def test_fetch_artist_tags_strips_ampersand_and_other_punctuation(cache: FileCache) -> None:
+    # Every non-word non-space character collapses to space (then multi-space → single space). Synonym map maps the post-strip form to the readable canonical.
+    client = LastFmClient(api_key="test-key", cache=cache)
+    payload = {
+        "toptags": {
+            "tag": [
+                {"name": "R&B", "count": 100},
+                {"name": "Drum & Bass", "count": 80},
+                {"name": "rock'n'roll", "count": 60},
+                {"name": "indie/rock", "count": 40},
+                {"name": "psy.trance", "count": 20},
+            ]
+        }
+    }
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)):
+        tags = client.fetch_artist_tags("x", "X")
+    # "R&B" → "r b" → synonym "rnb". "Drum & Bass" → "drum  bass" → "drum bass" → synonym "drum and bass". "rock'n'roll" → "rock n roll" (no synonym). "indie/rock" → "indie rock". "psy.trance" → "psy trance".
+    assert tags == ("rnb", "drum and bass", "rock n roll", "indie rock", "psy trance")
+
+
+def test_fetch_artist_tags_preserves_accented_word_chars(cache: FileCache) -> None:
+    # `\w` matches Unicode word chars by default in Python 3, so accented letters survive normalization.
+    client = LastFmClient(api_key="test-key", cache=cache)
+    payload = {"toptags": {"tag": [{"name": "Björk-Style", "count": 100}]}}
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)):
+        tags = client.fetch_artist_tags("x", "X")
+    assert tags == ("björk style",)
 
 
 def test_fetch_artist_tags_dedupes_normalized_variants_preserving_order(cache: FileCache) -> None:
