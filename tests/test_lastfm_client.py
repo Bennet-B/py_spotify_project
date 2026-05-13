@@ -91,6 +91,46 @@ def test_fetch_artist_tags_dedupes_normalized_variants_preserving_order(cache: F
     assert tags == ("rock", "hip hop", "pop")
 
 
+def test_fetch_artist_tags_normalizes_separators_without_synonym_entry(cache: FileCache) -> None:
+    # Underscores, hyphens, and multi-space all collapse to single-space via the generalized separator rule. No TAG_SYNONYMS entry needed for these spellings.
+    client = LastFmClient(api_key="test-key", cache=cache)
+    payload = {
+        "toptags": {
+            "tag": [
+                {"name": "Lo_Fi", "count": 100},
+                {"name": "post - rock", "count": 80},
+                {"name": "K-POP", "count": 60},
+                {"name": "drum  and  bass", "count": 40},
+            ]
+        }
+    }
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)):
+        tags = client.fetch_artist_tags("x", "X")
+    assert tags == ("lo fi", "post rock", "k pop", "drum and bass")
+
+
+def test_cache_stores_raw_tags_so_normalization_changes_survive(cache: FileCache, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Cache holds tag names exactly as Last.fm sent them. Mutating TAG_SYNONYMS after the cache is warm produces a different result on the next read without a re-fetch.
+    client = LastFmClient(api_key="test-key", cache=cache)
+    payload = {"toptags": {"tag": [{"name": "Funky-Town", "count": 100}]}}
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)) as mocked:
+        first = client.fetch_artist_tags("x", "X")
+    assert first == ("funky town",)
+    assert mocked.call_count == 1
+
+    # Inspect the on-disk cache directly: it should hold the original "Funky-Town" string, not the normalized "funky town".
+    cached_entry = cache.get("lastfm_artist/x")
+    assert cached_entry is not None
+    assert cached_entry["tags"] == ["Funky-Town"]
+
+    # Now extend TAG_SYNONYMS to map "funky town" to "funk". The cache is unchanged; the read-time pipeline re-normalizes.
+    monkeypatch.setitem(LastFmClient.TAG_SYNONYMS, "funky town", "funk")
+    with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)) as mocked_after:
+        second = client.fetch_artist_tags("x", "X")
+    assert second == ("funk",)
+    assert mocked_after.call_count == 0  # served from cache, no re-fetch
+
+
 def test_fetch_artist_tags_caches_results(cache: FileCache) -> None:
     client = LastFmClient(api_key="test-key", cache=cache)
     payload = {"toptags": {"tag": [{"name": "rock", "count": 100}]}}

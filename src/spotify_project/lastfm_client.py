@@ -16,9 +16,7 @@ logger = logging.getLogger(__name__)
 class LastFmClient:
     """Last.fm Web API client used to enrich Spotify artists with tags.
 
-    Wraps the unauthenticated ``artist.getTopTags`` endpoint. Tags are lowercased, stripped, synonym-canonicalized, and deduplicated (order-preserving) here so downstream code (Artist, genre_taxonomy filter, analyzers) can rely on the invariant "lowercase, unique, descending-weight order."
-
-    The full normalized tag list is cached; no top-N truncation happens at storage time. Callers that want a top-N slice (e.g. TagAnalyzer) apply it after reading.
+    Wraps the unauthenticated ``artist.getTopTags`` endpoint. The cache holds tags as they came off the wire (just JSON-shape and whitespace cleaned); lowercasing, separator collapse, synonym canonicalization, and deduplication happen on every read. That keeps the cache forward-compatible: tweaking TAG_SYNONYMS or the separator rule never invalidates existing cache entries.
 
     Attributes:
         api_key: Last.fm API key.
@@ -30,10 +28,8 @@ class LastFmClient:
     CACHE_TTL_DAYS: ClassVar[float] = 365.0
     REQUEST_TIMEOUT_SECONDS: ClassVar[float] = 10.0
 
-    # Maps known Last.fm tag variants to a canonical form. Lowercase-keyed.
-    # Add an entry here when two spellings show up as separate bars in the Top Tags / Top Genres chart for what is the same concept.
+    # Word-level synonyms applied AFTER generalized normalization (lowercase, strip, `_`/`-` → space, multi-space collapse). Add entries here only for genuine word-substitution cases, not for separator/casing variants — those are handled mechanically by ``_normalize_tag``.
     TAG_SYNONYMS: ClassVar[dict[str, str]] = {
-        "hip-hop": "hip hop",
         "hiphop": "hip hop",
         "rnb": "r&b",
         "r and b": "r&b",
@@ -71,11 +67,11 @@ class LastFmClient:
         return cls(api_key=key, cache=cache)
 
     def fetch_artist_tags(self, spotify_artist_id: str, artist_name: str, *, force_refresh: bool = False) -> tuple[str, ...]:
-        """Return the full list of Last.fm tags for an artist.
+        """Return the artist's tags in canonical form.
 
-        Tags are lowercased, stripped, synonym-canonicalized, and deduplicated (order-preserving) so the result is unique and in descending-weight order. The complete list is returned and cached — no top-N truncation here. Downstream consumers (e.g. TagAnalyzer) can slice if they want.
+        On a fresh fetch, the raw tag strings from Last.fm are stored as-is (JSON-shape cleaned, whitespace stripped, but otherwise unmodified). Whether the result comes from a fresh fetch or the cache, it then goes through the read-time pipeline: lowercase → separator/whitespace collapse → ``TAG_SYNONYMS`` → order-preserving dedupe.
 
-        Cached under ``lastfm_artist/<spotify_artist_id>.json`` with a 365-day TTL. Negative results (artist not found) are cached too. Rate-limit responses trigger a single retry; persistent rate-limit raises.
+        Cached under ``lastfm_artist/<spotify_artist_id>.json`` with a 365-day TTL. Negative results (artist not found) are cached as an empty tag list. Rate-limit responses trigger a single retry; persistent rate-limit raises.
 
         Args:
             spotify_artist_id: Spotify artist ID, used as the cache key.
@@ -83,7 +79,7 @@ class LastFmClient:
             force_refresh: If True, skip the cache and refetch.
 
         Returns:
-            Tuple of lowercased, unique tags in descending-weight order. Empty tuple when Last.fm has no tags for the artist or the artist is unknown.
+            Tuple of canonical, unique tags in descending-weight order. Empty tuple when Last.fm has no tags for the artist or the artist is unknown.
 
         Raises:
             RuntimeError: On persistent rate-limit (code 29 twice) or any non-"not found" Last.fm error.
@@ -91,15 +87,15 @@ class LastFmClient:
         cache_key = f"lastfm_artist/{spotify_artist_id}"
         cached = None if force_refresh else self.cache.get(cache_key, ttl_days=self.CACHE_TTL_DAYS)
         if cached is not None:
-            return tuple(cast(list[str], cached["tags"]))
+            return self._normalize_and_dedupe(cast(list[str], cached["tags"]))
 
         for attempt in range(2):
             data = self._call_get_top_tags(artist_name)
             error_code = data.get("error")
             if error_code is None:
-                tags = self._extract_tags(data)
-                self.cache.put(cache_key, {"tags": list(tags)})
-                return tags
+                raw_tags = self._extract_raw_tags(data)
+                self.cache.put(cache_key, {"tags": raw_tags})
+                return self._normalize_and_dedupe(raw_tags)
             if error_code == 6:
                 # Artist not found — log once, cache empty result, move on.
                 logger.warning("Last.fm has no entry for artist %r (id=%s); recording empty tags", artist_name, spotify_artist_id)
@@ -137,36 +133,54 @@ class LastFmClient:
             body = response.read()
         return cast(dict[str, Any], json.loads(body))
 
-    def _extract_tags(self, data: dict[str, Any]) -> tuple[str, ...]:
-        """Pull, normalize, and deduplicate the full tag list from a Last.fm response body.
+    def _extract_raw_tags(self, data: dict[str, Any]) -> list[str]:
+        """Pull raw tag names from a Last.fm response body.
 
-        Last.fm's XML-to-JSON layer sometimes returns a single tag as a bare dict instead of a 1-element list; both shapes are normalized. Each tag is lowercased, stripped, mapped via ``TAG_SYNONYMS`` if a known variant, and deduplicated with first-occurrence order preservation. The complete list is returned — no top-N slicing here.
+        Handles two wire-format quirks: Last.fm's XML-to-JSON layer sometimes returns a single tag as a bare dict instead of a 1-element list, and tag names occasionally come with leading/trailing whitespace. Tags whose names are empty after stripping are dropped. No lowercasing, separator collapse, synonym mapping, or deduplication happens here — those are read-time concerns so the cache survives future normalization tweaks.
 
         Args:
             data: Parsed JSON body from the Last.fm API.
 
         Returns:
-            Tuple of unique, lowercased, canonicalized tags in descending-weight order.
+            List of raw tag-name strings (whitespace stripped, empties dropped) in the order Last.fm returned them.
         """
         toptags = cast(dict[str, Any], data.get("toptags", {}))
         raw: Any = toptags.get("tag", [])
         if isinstance(raw, dict):
             raw = [raw]
         items = cast(list[dict[str, Any]], raw)
-        normalized = (self._normalize_tag(str(item.get("name", ""))) for item in items)
+        stripped = (str(item.get("name", "")).strip() for item in items)
+        return [name for name in stripped if name]
+
+    @classmethod
+    def _normalize_and_dedupe(cls, raw_tags: list[str]) -> tuple[str, ...]:
+        """Apply the read-time normalization pipeline to a raw tag list.
+
+        Pipeline: ``_normalize_tag`` per element (lowercase + separator collapse + synonym lookup), drop empties, order-preserving dedupe via ``dict.fromkeys``.
+
+        Args:
+            raw_tags: Tag names as stored on disk (already JSON-shape-cleaned and whitespace-stripped by ``_extract_raw_tags``, but otherwise raw).
+
+        Returns:
+            Tuple of canonical, unique tags in first-occurrence order.
+        """
+        normalized = (cls._normalize_tag(t) for t in raw_tags)
         non_empty = (n for n in normalized if n)
-        # dict.fromkeys preserves first-occurrence order while deduplicating; cheaper than a manual seen-set loop.
         return tuple(dict.fromkeys(non_empty))
 
     @classmethod
     def _normalize_tag(cls, raw_name: str) -> str:
-        """Lowercase, strip, and synonym-canonicalize a single tag.
+        """Canonicalize a single raw tag.
+
+        Pipeline: lowercase + strip → replace ``_`` and ``-`` with space → collapse multi-space → ``TAG_SYNONYMS`` lookup. The separator rule handles all spelling variants of the same concept (``hip-hop``, ``hip_hop``, ``hip  hop`` all become ``hip hop``) without needing synonym entries; the synonym map is reserved for genuine word-level cases (``rnb`` → ``r&b``).
 
         Args:
-            raw_name: Tag text as returned by Last.fm.
+            raw_name: Raw tag string from Last.fm.
 
         Returns:
-            Canonical form: lowercased, stripped of surrounding whitespace, then mapped via ``TAG_SYNONYMS`` if a known variant. Returns ``""`` for an all-whitespace input so the caller can filter it out.
+            Canonical form. Returns ``""`` when the input is all-whitespace so the caller can filter.
         """
         normalized = raw_name.strip().lower()
+        normalized = normalized.replace("_", " ").replace("-", " ")
+        normalized = " ".join(normalized.split())
         return cls.TAG_SYNONYMS.get(normalized, normalized)
