@@ -60,7 +60,7 @@ def test_playlist_paginates_and_enriches_artists(tmp_path: Path) -> None:
     first = playlist.tracks[0].primary_artist
     assert first is not None
     assert first.name == "Artist 1"
-    assert "rock" in first.genres
+    assert first.tags == ()
 
 
 def test_from_env_raises_on_missing_credentials(
@@ -132,7 +132,7 @@ def test_liked_songs_paginates_and_synthesizes_pseudo_playlist(tmp_path: Path) -
     first = playlist.tracks[0].primary_artist
     assert first is not None
     assert first.name == "Artist 1"
-    assert "rock" in first.genres
+    assert first.tags == ()
 
 
 def test_artists_uses_long_ttl_for_cached_entries(tmp_path: Path) -> None:
@@ -242,3 +242,78 @@ def test_artists_throttles_between_uncached_fetches(tmp_path: Path) -> None:
     assert mock_sleep.call_count == 2
     for call in mock_sleep.call_args_list:
         assert call.args[0] == SpotifyClient.ARTIST_FETCH_DELAY_SECONDS
+
+
+def test_enrich_with_artists_uses_genre_enricher_when_set(tmp_path: Path) -> None:
+    """_enrich_with_artists calls genre_enricher.fetch_artist_tags and populates Artist.tags."""
+    cache = FileCache(root=tmp_path / "api")
+    # Pre-populate Spotify artist cache so the Spotify side is read-only here.
+    cache.put("artist/A1", {"id": "A1", "name": "Artist One"})
+
+    sp = MagicMock()  # Spotipy client; should NOT be called for already-cached artists.
+    enricher = MagicMock()
+    enricher.fetch_artist_tags.return_value = ("rock", "indie")
+
+    client = SpotifyClient(sp=sp, cache=cache, genre_enricher=enricher)
+    track_items = [
+        {
+            "item": {
+                "type": "track",
+                "id": "T1",
+                "name": "Track One",
+                "artists": [{"id": "A1", "name": "Artist One"}],
+                "album": {"name": "Album", "release_date": "2020-01-01"},
+                "duration_ms": 200_000,
+                "explicit": False,
+            },
+            "added_at": "2024-01-01T00:00:00Z",
+            "is_local": False,
+        }
+    ]
+
+    tracks = client._enrich_with_artists(track_items)  # pyright: ignore[reportPrivateUsage]
+
+    assert len(tracks) == 1
+    primary = tracks[0].primary_artist
+    assert primary is not None
+    assert primary.tags == ("rock", "indie")
+    enricher.fetch_artist_tags.assert_called_once_with("A1", "Artist One", force_refresh=False)
+    sp.artist.assert_not_called()
+
+
+def test_enrich_with_artists_skips_lastfm_when_enricher_none(tmp_path: Path) -> None:
+    """_enrich_with_artists leaves Artist.tags empty when genre_enricher is None."""
+    cache = FileCache(root=tmp_path / "api")
+    cache.put("artist/A1", {"id": "A1", "name": "Artist One"})
+
+    sp = MagicMock()
+    client = SpotifyClient(sp=sp, cache=cache, genre_enricher=None)
+    track_items = [
+        {
+            "item": {
+                "type": "track",
+                "id": "T1",
+                "name": "Track One",
+                "artists": [{"id": "A1", "name": "Artist One"}],
+                "album": {"name": "Album", "release_date": "2020-01-01"},
+                "duration_ms": 200_000,
+                "explicit": False,
+            },
+            "added_at": "2024-01-01T00:00:00Z",
+            "is_local": False,
+        }
+    ]
+
+    tracks = client._enrich_with_artists(track_items)  # pyright: ignore[reportPrivateUsage]
+
+    primary = tracks[0].primary_artist
+    assert primary is not None
+    assert primary.tags == ()
+
+
+def test_spotify_client_init_defaults_genre_enricher_to_none(tmp_path: Path) -> None:
+    """SpotifyClient.__init__ defaults genre_enricher to None when not supplied."""
+    cache = FileCache(root=tmp_path / "api")
+    sp = MagicMock()
+    client = SpotifyClient(sp=sp, cache=cache)
+    assert client.genre_enricher is None

@@ -42,10 +42,33 @@ Before the Feb 2026 change, artist data was cheap — one call, all artists. Now
 With one request per artist, the client must throttle. Artist fetches are spaced 250 ms apart (~4 req/s) to stay well inside Spotify's rolling-window rate limit. The progress bar (via `tqdm` if installed) and INFO log lines exist specifically because fetching a fresh playlist with 500+ unique artists takes over two minutes — without feedback the notebook would look frozen.
 
 **Genre data moved off Spotify entirely.**
-Spotify has never exposed genre at the track level — historically genres lived on the *artist* object, and we'd surface a track's genre by looking up its primary artist. The 2025 silent-field strip closed off that path too: the `genres` field on `GET /artists/{id}` is now empty. The plan to restore genre analysis is a Phase 1 follow-up that pulls per-artist tags from the [Last.fm API](https://www.last.fm/api), filtered through a curated whitelist to drop folksonomy noise ("seen live", "british", "00s", …). Spec: [`docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md`](docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md). Until that lands, `GenreAnalyzer` runs but renders a "No genre data" placeholder.
+Spotify has never exposed genre at the track level — historically genres lived on the *artist* object, and we'd surface a track's genre by looking up its primary artist. The 2025 silent-field strip closed off that path too: the `genres` field on `GET /artists/{id}` is now empty. Genres are sourced from Last.fm's `artist.getTopTags` endpoint — see "Restoring genres (and adding tags) via Last.fm" below for details.
 
 **Popularity analysis is gone.**
 Track and artist `popularity` were both stripped (see timeline above). `PopularityAnalyzer` previously binned the 0-100 score into a histogram; with every track now reading as 0, the chart degenerated to a single bar. Per the project's no-dead-API-code policy, the analyzer and the field have been removed from the codebase rather than kept as a stub.
+
+### Restoring genres (and adding tags) via Last.fm
+
+Genres are re-sourced from Last.fm's `artist.getTopTags` endpoint, and raw
+tags are surfaced as a separate analysis:
+
+- ~95% per-artist coverage for typical Spotify libraries (mainstream + indie).
+- One-time enrichment cost: ~7 minutes for ~2000 unique artists.
+- Cached for 365 days under `.cache/api/lastfm_artist/<spotify_artist_id>.json`.
+- `Top Tags` panel: raw Last.fm tags (eras, geography, moods, real genres).
+- `Top Genres` panel: tags filtered through a curated whitelist in
+  `src/spotify_project/genre_taxonomy.py`. Whitelist edits take effect
+  instantly — no re-enrichment needed.
+
+**To enable Last.fm locally:** register at
+<https://www.last.fm/api/account/create> and set `LASTFM_API_KEY` in `.env`.
+The project runs fine without a Last.fm key — the `Top Tags` and `Top Genres`
+panels are skipped with an INFO log line.
+
+**Caveat:** Last.fm's audience skews Western and indie, so the tag
+distribution is biased that way. For mainstream pop and indie rock the data
+is excellent; for K-pop, classical, and very-niche electronic the tag set
+is sparser and less precise.
 
 ### What this means for the codebase
 
@@ -65,12 +88,12 @@ That gives us:
 
 - **Release-year & decade distribution** — how old is your music?
 - **Top artists** (track count and total minutes)
-- **Top genres** (pending Last.fm enrichment — see above)
+- **Top genres**
 - **Total duration** of each playlist; explicit ratio
 - **"Added at" timeline** — how a playlist evolved over time
 - **Cross-playlist comparison** — pick three and see who has the oldest songs, the most variety, the longest runtime
 
-So no mood-map and no popularity histogram, but a perfectly rich semester-project worth of analysis once Last.fm restores genres.
+So no mood-map and no popularity histogram, but a perfectly rich semester-project worth of analysis — genres and tags sourced from Last.fm.
 
 ## How to run
 
@@ -156,7 +179,9 @@ All tests should pass.
 - `src/spotify_project/cache.py` — `FileCache`, a simple file-based JSON cache with TTL
 - `src/spotify_project/client.py` — `SpotifyClient`, OAuth + API access via `spotipy` (playlists, liked songs, artists)
 - `src/spotify_project/models.py` — `Track`, `Playlist`, `Artist`, `User`, `PlaylistSummary` (frozen dataclasses)
-- `src/spotify_project/analyzer.py` — `Analyzer` ABC + five concrete analyzers (Genre, Year, Artist, Duration, Timeline) + `PlaylistAnalyzer` orchestrator. Includes plotting.
+- `src/spotify_project/analyzer.py` — `Analyzer` ABC + six concrete analyzers (Genre, Tag, Year, Artist, Duration, Timeline) + `PlaylistAnalyzer` orchestrator. Includes plotting.
+- `src/spotify_project/genre_taxonomy.py` — `GENRE_WHITELIST` + `filter_to_genres` (curated whitelist used by `GenreAnalyzer`).
+- `src/spotify_project/lastfm_client.py` — `LastFmClient`, the optional Last.fm `artist.getTopTags` enrichment used by `SpotifyClient` when `LASTFM_API_KEY` is set.
 - `tests/` — pytest unit tests
 - `notebooks/01_explore_playlist.ipynb` — demo notebook
 

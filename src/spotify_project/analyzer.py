@@ -29,6 +29,30 @@ def _get_coverage(summary: pd.DataFrame) -> tuple[int, int]:
     return coverage
 
 
+def _top_n_from_list_column(df: pd.DataFrame, column: str, top_n: int, value_label: str) -> pd.DataFrame:
+    """Frequency-count a DataFrame list-column and return the top N.
+
+    Used by TagAnalyzer (column='tags') and GenreAnalyzer (column='genres') — both share the explode-and-group-by shape; only the column name and the output label differ.
+
+    Args:
+        df: Track-level DataFrame.
+        column: Name of the list-valued column to count (e.g. 'tags' or 'genres').
+        top_n: Number of rows to return.
+        value_label: Output column name for the labels (e.g. 'tag' or 'genre').
+
+    Returns:
+        DataFrame with columns ``[value_label, 'count']``, descending count, limited to ``top_n`` rows.
+        Empty DataFrame with the right columns when ``df`` is empty or ``column`` is missing.
+    """
+    empty = pd.DataFrame({value_label: [], "count": []})
+    if df.empty or column not in df.columns:
+        return empty
+    exploded = df.explode(column).dropna(subset=[column])
+    if exploded.empty:
+        return empty
+    return exploded.groupby(column, as_index=False).size().rename(columns={column: value_label, "size": "count"}).sort_values("count", ascending=False).head(top_n).reset_index(drop=True)
+
+
 def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
     """Apply a consistent style and coverage suffix to an Axes.
 
@@ -64,12 +88,16 @@ class Analyzer(ABC):
     Each subclass MUST also declare a non-empty class-level ``title``; this is enforced at class-definition time.
 
     Attributes:
-        title: Short title; appears as the plot's title and is used as the key in ``PlaylistAnalyzer.run_all``'s result dict,
-            so collisions between subclasses would silently overwrite results.
+        title: Short title; appears as the plot's title and is used as the key in ``PlaylistAnalyzer.run_all``'s result dict.
+        default_color: Default bar/line color for plot().
+        skip_message: If set, ``PlaylistAnalyzer.run_all`` and ``plot_all`` skip this analyzer when its ``coverage()`` returns ``(0, n)``.
+            Default None means "always run, even at zero coverage" (the analyzer's own ``plot`` renders an empty-state placeholder).
+            Use skip_message for analyzers whose data source can be entirely absent (e.g. tags without a Last.fm key) — the user-visible message is logged when the skip triggers.
     """
 
     title: ClassVar[str]
     default_color: ClassVar[_Color] = "#1f77b4"
+    skip_message: ClassVar[str | None] = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -128,6 +156,64 @@ class Analyzer(ABC):
         return summary
 
 
+class TagAnalyzer(Analyzer):
+    """Top Last.fm tags by track count.
+
+    Tags are raw folksonomy: real genres alongside eras (``00s``), geography (``british``), behavior (``seen live``), sentiment (``favorite``).
+    Useful as a complete view of how listeners describe these artists, and as a curation aid when refining the whitelist that drives GenreAnalyzer.
+
+    Skipped by ``PlaylistAnalyzer.run_all`` when no track has any tag — typically because LASTFM_API_KEY is unset.
+
+    Args:
+        top_n: How many tags to return; default 15.
+        title: Optional per-instance title override.
+    """
+
+    title = "Top Tags"
+    skip_message = "no tag data — set LASTFM_API_KEY to enable."
+
+    def __init__(self, top_n: int = 15, *, title: str | None = None) -> None:
+        self.top_n = top_n
+        self._instance_title = title
+
+    def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
+        """Count rows whose ``tags`` list is non-empty."""
+        if df.empty or "tags" not in df.columns:
+            return (0, len(df))
+        n_with = int(df["tags"].apply(lambda t: bool(t) if isinstance(t, list) else False).sum())  # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+        return (n_with, len(df))
+
+    def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Count tag frequency across all tracks and return the top N.
+
+        Args:
+            df: Track-level DataFrame with a ``tags`` column (list-valued).
+
+        Returns:
+            DataFrame with columns ``tag`` and ``count``, descending count, limited to ``top_n`` rows.
+        """
+        result = _top_n_from_list_column(df, "tags", self.top_n, "tag")
+        return self._attach_coverage(result, df)
+
+    def plot(self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None) -> None:
+        """Render a horizontal bar chart of tag counts.
+
+        Args:
+            ax: Matplotlib Axes to draw on.
+            summary: Output of ``analyze``; columns ``tag`` and ``count``.
+            color: Bar color; defaults to the class's ``default_color``.
+        """
+        c = color if color is not None else self.default_color
+        if summary.empty:
+            ax.text(0.5, 0.5, "No tag data", ha="center", va="center")
+            _style_axes(ax, self.effective_title, summary)
+            return
+        ax.barh(summary["tag"], summary["count"], color=c)
+        ax.invert_yaxis()
+        ax.set_xlabel("Track count")
+        _style_axes(ax, self.effective_title, summary)
+
+
 class GenreAnalyzer(Analyzer):
     """Top genres by track count, with empty / sparse data handled.
 
@@ -136,6 +222,7 @@ class GenreAnalyzer(Analyzer):
     """
 
     title = "Top Genres"
+    skip_message = "no genres after whitelist filtering — set LASTFM_API_KEY to enable, or extend GENRE_WHITELIST in genre_taxonomy.py."
 
     def __init__(self, top_n: int = 15, *, title: str | None = None) -> None:
         self.top_n = top_n
@@ -152,24 +239,12 @@ class GenreAnalyzer(Analyzer):
         """Count genre frequency across all tracks and return the top N.
 
         Args:
-            df: Track-level DataFrame with a ``genres`` column (each cell is a list of strings).
+            df: Track-level DataFrame with a ``genres`` column (list-valued).
 
         Returns:
-            DataFrame with columns ``genre`` and ``count``, sorted descending by count, limited to ``top_n`` rows.
+            DataFrame with columns ``genre`` and ``count``, descending count,  limited to ``top_n`` rows.
         """
-        if df.empty:
-            return self._attach_coverage(pd.DataFrame({"genre": [], "count": []}), df)
-        exploded = df.explode("genres").dropna(subset=["genres"])
-        if exploded.empty:
-            return self._attach_coverage(pd.DataFrame({"genre": [], "count": []}), df)
-        result = (
-            exploded.groupby("genres", as_index=False)
-            .size()
-            .rename(columns={"genres": "genre", "size": "count"})
-            .sort_values("count", ascending=False)
-            .head(self.top_n)
-            .reset_index(drop=True)
-        )
+        result = _top_n_from_list_column(df, "genres", self.top_n, "genre")
         return self._attach_coverage(result, df)
 
     def plot(self, ax: Axes, summary: pd.DataFrame, *, color: _Color | None = None) -> None:
@@ -555,6 +630,7 @@ class PlaylistAnalyzer:
             if analyzers is not None
             else [
                 GenreAnalyzer(),
+                TagAnalyzer(),
                 YearAnalyzer(),
                 ArtistAnalyzer(),
                 DurationAnalyzer(),
@@ -572,8 +648,8 @@ class PlaylistAnalyzer:
     def from_playlist(cls, playlist: Playlist, analyzers: list[Analyzer] | None = None) -> PlaylistAnalyzer:
         """Build a PlaylistAnalyzer from a Playlist by flattening tracks.
 
-        Each Track's ``primary_artist`` is read for the ``primary_artist_*`` and ``genres`` columns.
-        Local files (``is_local=True``) yield empty genres and ``None`` for artist IDs.
+        ``primary_artist_*`` columns come from the lead artist; ``tags`` and ``genres`` are the union (order-preserving dedup) across **all** artists on the track,
+        so a featured artist's metadata isn't discarded. Local files (``is_local=True``) yield empty ``tags``/``genres`` and ``None`` for artist IDs.
 
         Args:
             playlist: Source Playlist with full Track + Artist data.
@@ -587,6 +663,9 @@ class PlaylistAnalyzer:
             primary = t.primary_artist
             release_date = t.release_date
             release_year: int | None = int(release_date[:4]) if release_date and release_date[:4].isdigit() else None
+            # Union all artists' tags/genres per track (order-preserving dedup). A featured artist's tags shouldn't be discarded just because they're not the lead.
+            track_tags = list(dict.fromkeys(tag for a in t.artists for tag in a.tags))
+            track_genres = list(dict.fromkeys(g for a in t.artists for g in a.genres))
             rows.append(
                 {
                     "track_id": t.id,
@@ -603,7 +682,8 @@ class PlaylistAnalyzer:
                     "explicit": t.explicit,
                     "added_at": t.added_at,
                     "is_local": t.is_local,
-                    "genres": list(primary.genres) if primary else [],
+                    "tags": track_tags,
+                    "genres": track_genres,
                 }
             )
         df = pd.DataFrame(rows)
@@ -612,25 +692,39 @@ class PlaylistAnalyzer:
         return cls(df=df, analyzers=analyzers)
 
     def run_all(self) -> dict[str, pd.DataFrame]:
-        """Run every registered Analyzer; returns ``{title: summary_df}``."""
-        return {a.effective_title: a.analyze(self.df) for a in self.analyzers}
+        """Run every registered Analyzer; returns ``{title: summary_df}``.
+
+        Analyzers whose ``coverage(df)`` returns ``(0, n)`` AND that have set ``skip_message`` are skipped entirely (no entry in the result dict);
+        a single INFO log line records the skip and the analyzer's hint.
+        """
+        out: dict[str, pd.DataFrame] = {}
+        for a in self.analyzers:
+            if a.skip_message is not None:
+                n_data, _ = a.coverage(self.df)
+                if n_data == 0:
+                    logger.info("Skipping %s: %s", a.effective_title, a.skip_message)
+                    continue
+            out[a.effective_title] = a.analyze(self.df)
+        return out
 
     def plot_all(self, fig: Figure) -> None:
-        """Lay out one subplot per analyzer in a vertical stack on ``fig``.
+        """Lay out one subplot per non-skipped analyzer in a vertical stack on ``fig``.
 
-        Each panel uses one color from seaborn's ``"colorblind"`` palette, assigned in registration order.
+        Analyzers whose ``coverage(df)`` returns ``(0, n)`` AND that have set ``skip_message`` are skipped — no subplot allocated.
+        The log line is emitted by ``run_all``, which this method calls.
 
         Args:
             fig: Matplotlib Figure to subdivide with subplots.
         """
-        n = len(self.analyzers)
+        summaries = self.run_all()
+        active = [a for a in self.analyzers if a.effective_title in summaries]
+        n = len(active)
         if n == 0:
             return
-        summaries = self.run_all()
         axes = fig.subplots(n, 1)
         axes_list = [axes] if n == 1 else list(axes)
         palette = sns.color_palette("colorblind", n_colors=n)
-        for ax, analyzer, color in zip(axes_list, self.analyzers, palette, strict=True):
+        for ax, analyzer, color in zip(axes_list, active, palette, strict=True):
             analyzer.plot(ax, summaries[analyzer.effective_title], color=color)
         fig.tight_layout()
 

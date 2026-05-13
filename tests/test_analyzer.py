@@ -11,6 +11,7 @@ from spotify_project.analyzer import (
     Analyzer,
     GenreAnalyzer,
     PlaylistAnalyzer,
+    TagAnalyzer,
     TimelineAnalyzer,
     YearAnalyzer,
 )
@@ -126,8 +127,8 @@ def test_from_playlist_exposes_artist_id_and_name_lists() -> None:
 
     from spotify_project.models import Artist, Playlist, Track
 
-    a1 = Artist(id="a1", name="Alice", genres=("rock",))
-    a2 = Artist(id="a2", name="Bob", genres=("indie",))
+    a1 = Artist(id="a1", name="Alice", tags=("rock",))
+    a2 = Artist(id="a2", name="Bob", tags=("indie",))
     track = Track(
         id="t1",
         name="Song",
@@ -553,3 +554,38 @@ def test_artist_analyzer_raises_value_error_on_mismatched_list_lengths() -> None
     )
     with pytest.raises(ValueError):
         ArtistAnalyzer().analyze(df)
+
+
+def test_tag_analyzer_counts_tags_top_n() -> None:
+    df = pd.DataFrame(
+        {
+            "tags": [
+                ["rock", "indie", "british"],
+                ["rock", "00s"],
+                ["rock", "indie"],
+                [],
+            ],
+            "duration_min": [3.5, 4.0, 3.0, 2.0],
+        }
+    )
+    result = TagAnalyzer(top_n=2).analyze(df)
+    # Counts: rock=3, indie=2, british=1, 00s=1. Top-2: rock, indie.
+    assert list(result["tag"]) == ["rock", "indie"]
+    assert list(result["count"]) == [3, 2]
+
+
+def test_tag_analyzer_coverage_counts_rows_with_any_tag() -> None:
+    df = pd.DataFrame({"tags": [["rock"], [], ["pop", "indie"], []]})
+    n_data, n_total = TagAnalyzer().coverage(df)
+    assert n_data == 2
+    assert n_total == 4
+
+
+def test_tag_analyzer_empty_df_returns_empty() -> None:
+    result = TagAnalyzer().analyze(pd.DataFrame())
+    assert result.empty
+
+
+def test_tag_analyzer_skips_with_zero_coverage_via_skip_message() -> None:
+    assert TagAnalyzer.skip_message is not None
+    assert "LASTFM_API_KEY" in TagAnalyzer.skip_message
