@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .lastfm_client import LastFmClient
 
 import spotipy
+from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyOAuth
 from tqdm import tqdm as _tqdm_cls
 
@@ -59,6 +60,15 @@ class SpotifyClient:
     # Cache hits skip the sleep, so a warm cache pays no overhead.
     ARTIST_FETCH_DELAY_SECONDS: ClassVar[float] = 0.25
 
+    # Upper bound for honoring a Spotify Retry-After. Beyond this, the call raises instead of sleeping —
+    # a single 429 with Retry-After: 86400s used to freeze the notebook kernel with no way to interrupt cleanly.
+    MAX_RATE_LIMIT_WAIT_SECONDS: ClassVar[int] = 20 * 60
+
+    # status_forcelist for spotipy.Spotify's urllib3 Retry adapter. spotipy's default includes 429,
+    # which makes urllib3 silently sleep through Retry-After (up to 24h) before raising — exactly the freeze we want to avoid.
+    # Excluding 429 lets it bubble up as SpotifyException(http_status=429, headers={"Retry-After": ...}) so ``_call`` can decide.
+    RETRY_STATUS_FORCELIST: ClassVar[tuple[int, ...]] = (500, 502, 503, 504)
+
     def __init__(self, sp: spotipy.Spotify, cache: FileCache, *, genre_enricher: LastFmClient | None = None) -> None:
         self.sp = sp
         self.cache = cache
@@ -95,8 +105,108 @@ class SpotifyClient:
             scope=scope_str,
             cache_path=str(token_cache_path),
         )
-        sp = spotipy.Spotify(auth_manager=oauth)
+        sp = spotipy.Spotify(auth_manager=oauth, status_forcelist=cls.RETRY_STATUS_FORCELIST)
         return cls(sp=sp, cache=cache, genre_enricher=genre_enricher)
+
+    def _call(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+        """Invoke a spotipy call with a Retry-After-aware rate-limit guard.
+
+        Internal plumbing; callers go through the ``_sp_*`` wrappers below, which absorb the cast back to ``dict[str, Any]``.
+        On HTTP 429, reads ``Retry-After`` from the response headers:
+        if the cooldown is within ``MAX_RATE_LIMIT_WAIT_SECONDS``, sleeps and retries once.
+        If the cooldown exceeds the threshold (e.g. Spotify's 24h block), logs an ERROR with a human-readable HH:MM:SS duration,
+        and raises ``RuntimeError`` instead of sleeping — the historical behavior froze the notebook kernel with no way to interrupt cleanly.
+        Non-429 ``SpotifyException`` instances pass through unchanged.
+
+        Args:
+            fn: Bound spotipy method (e.g. ``self.sp.artist``).
+            *args: Positional arguments forwarded to ``fn``.
+            **kwargs: Keyword arguments forwarded to ``fn``.
+
+        Returns:
+            Whatever ``fn`` returned (typed ``Any`` because spotipy methods are untyped — the ``_sp_*`` wrappers cast back to the concrete shape).
+
+        Raises:
+            RuntimeError: If Retry-After exceeds ``MAX_RATE_LIMIT_WAIT_SECONDS`` or if a second consecutive 429 still asks to wait longer than the threshold.
+            SpotifyException: For any non-429 API error, unchanged.
+        """
+        for attempt in range(2):
+            try:
+                return fn(*args, **kwargs)
+            except SpotifyException as exc:
+                if exc.http_status != 429:
+                    raise
+                retry_after = self._parse_retry_after(exc)
+                if retry_after > self.MAX_RATE_LIMIT_WAIT_SECONDS:
+                    duration = self._format_duration(retry_after)
+                    logger.error(
+                        "Spotify rate-limit cooldown is %s (%ds) — refusing to wait. Stop here and re-run the notebook after the cooldown expires.",
+                        duration,
+                        retry_after,
+                    )
+                    raise RuntimeError(f"Spotify rate-limit cooldown is {duration} ({retry_after}s); refusing to wait. Re-run the notebook after the cooldown expires.") from exc
+                if attempt == 0:
+                    logger.warning("Spotify rate-limited; sleeping %ds and retrying once.", retry_after)
+                    time.sleep(retry_after)
+                    continue
+                raise RuntimeError(f"Spotify rate-limit persisted after a {retry_after}s retry; aborting.") from exc
+        # Unreachable — the loop either returns, sleeps-and-continues, or raises. The bare raise placates pyright's exhaustiveness check.
+        raise AssertionError("unreachable")
+
+    @staticmethod
+    def _parse_retry_after(exc: SpotifyException) -> int:
+        """Extract a usable Retry-After value (seconds) from a SpotifyException.
+
+        Falls back to ``MAX_RATE_LIMIT_WAIT_SECONDS + 1`` (just above the threshold) when the header is missing, blank, or non-numeric — that way the bail-out path triggers,
+        which is the safer default than retrying immediately and re-tripping the limit. spotipy's urllib3-retry exhaustion path sets ``headers={}``, so this case is real.
+
+        Args:
+            exc: The SpotifyException raised on a 429 response.
+
+        Returns:
+            Retry-After in seconds, or a sentinel above the threshold when unavailable.
+        """
+        headers = cast(dict[str, Any] | None, exc.headers)
+        raw: Any = headers.get("Retry-After") if headers else None
+        if raw is None:
+            return SpotifyClient.MAX_RATE_LIMIT_WAIT_SECONDS + 1
+        try:
+            return int(str(raw).strip())
+        except ValueError:
+            logger.warning("Unparseable Retry-After header %r; treating as over-threshold.", raw)
+            return SpotifyClient.MAX_RATE_LIMIT_WAIT_SECONDS + 1
+
+    @staticmethod
+    def _format_duration(seconds: int) -> str:
+        """Format a seconds count as ``H:MM:SS`` for log messages."""
+        hours, remainder = divmod(seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours:d}:{minutes:02d}:{secs:02d}"
+
+    # region spotipy method wrappers
+    # spotipy is untyped, so every direct ``self.sp.*`` call surfaces as Unknown and forces a cast plus a ``# pyright: ignore`` at the call site.
+    # These thin wrappers absorb that noise once per method and give the business-logic methods (``fetch_playlist``, ``fetch_liked_songs``, …) concrete return types.
+    # Each wrapper goes through ``_call`` so the Retry-After-aware rate-limit guard still applies.
+
+    def _sp_current_user(self) -> dict[str, Any]:
+        return cast(dict[str, Any], self._call(self.sp.current_user))
+
+    def _sp_current_user_playlists(self) -> dict[str, Any]:
+        return cast(dict[str, Any], self._call(self.sp.current_user_playlists))
+
+    def _sp_next(self, page: dict[str, Any]) -> dict[str, Any]:
+        return cast(dict[str, Any], self._call(self.sp.next, page))  # pyright: ignore[reportUnknownArgumentType]
+
+    def _sp_playlist(self, playlist_id: str) -> dict[str, Any]:
+        return cast(dict[str, Any], self._call(self.sp.playlist, playlist_id))  # pyright: ignore[reportUnknownArgumentType]
+
+    def _sp_current_user_saved_tracks(self, *, limit: int) -> dict[str, Any]:
+        return cast(dict[str, Any], self._call(self.sp.current_user_saved_tracks, limit=limit))  # pyright: ignore[reportUnknownArgumentType]
+
+    def _sp_artist(self, artist_id: str) -> dict[str, Any]:
+        return cast(dict[str, Any], self._call(self.sp.artist, artist_id))  # pyright: ignore[reportUnknownArgumentType]
+
+    # endregion
 
     def fetch_current_user(self) -> User:
         """Return the authenticated user's profile.
@@ -104,7 +214,7 @@ class SpotifyClient:
         Returns:
             Parsed ``User`` with id, display_name, and email (None if scope not granted).
         """
-        data = cast(dict[str, Any], self.sp.current_user())
+        data = self._sp_current_user()
         if not data.get("id"):
             raise RuntimeError(f"Spotify returned a user payload with no id; check token validity. Keys: {list(data.keys())}")
         return User(
@@ -121,11 +231,11 @@ class SpotifyClient:
         Returns:
             List of ``PlaylistSummary`` objects, one per playlist.
         """
-        results = cast(dict[str, Any], self.sp.current_user_playlists())
+        results = self._sp_current_user_playlists()
         raw: list[dict[str, Any]] = [p for p in results["items"] if p is not None]
         dropped = len(results["items"]) - len(raw)
         while results.get("next"):
-            results = cast(dict[str, Any], self.sp.next(results))
+            results = self._sp_next(results)
             batch = [p for p in results["items"] if p is not None]
             dropped += len(results["items"]) - len(batch)
             raw.extend(batch)
@@ -162,7 +272,7 @@ class SpotifyClient:
         data: dict[str, Any]
         if cached is None:
             logger.info("Fetching playlist %s from API", playlist_id)
-            data = cast(dict[str, Any], self.sp.playlist(playlist_id))
+            data = self._sp_playlist(playlist_id)
             if "items" not in data:
                 owner_name = data.get("owner", {}).get("display_name", "<unknown>")
                 playlist_name = data.get("name", "<unknown>")
@@ -170,7 +280,7 @@ class SpotifyClient:
             track_items: list[dict[str, Any]] = list(data["items"]["items"])
             page: dict[str, Any] = data["items"]
             while page.get("next"):
-                page = cast(dict[str, Any], self.sp.next(page))
+                page = self._sp_next(page)
                 track_items.extend(page["items"])
             data["items"]["items"] = track_items
             data["items"].pop("next", None)
@@ -203,13 +313,13 @@ class SpotifyClient:
         data: dict[str, Any]
         if cached is None:
             logger.info("Fetching liked songs from API")
-            first = cast(dict[str, Any], self.sp.current_user_saved_tracks(limit=50))
+            first = self._sp_current_user_saved_tracks(limit=50)
             # Convert legacy {"track": ...} → {"item": ...} so the rest of the pipeline (which reads item["item"]) can consume unchanged.
             raw_items: list[dict[str, Any]] = list(first["items"])
             dropped = sum(1 for it in first["items"] if it.get("track") is None)
             page: dict[str, Any] = first
             while page.get("next"):
-                page = cast(dict[str, Any], self.sp.next(page))
+                page = self._sp_next(page)
                 raw_items.extend(page["items"])
                 dropped += sum(1 for it in page["items"] if it.get("track") is None)
             items: list[dict[str, Any]] = [
@@ -293,9 +403,7 @@ class SpotifyClient:
         ids = sorted(set(artist_ids))
         if not ids:
             return []
-        n = len(ids)
-        estimate_s = n * self.ARTIST_FETCH_DELAY_SECONDS
-        logger.info("Fetching %d unique artists (~%.0f s estimate)", n, estimate_s)
+        logger.info("Fetching %d unique artists", len(ids))
         out: list[Artist] = []
         ids_iter: Iterable[str] = _tqdm_cls(ids, desc="Fetching artists", unit="artist")  # pyright: ignore[reportUnknownVariableType]
         for artist_id in ids_iter:
@@ -304,7 +412,7 @@ class SpotifyClient:
             data: dict[str, Any]
             if cached is None:
                 logger.debug("Cache miss — fetching artist %s", artist_id)
-                data = cast(dict[str, Any], self.sp.artist(artist_id))
+                data = self._sp_artist(artist_id)
                 self.cache.put(cache_key, data)
                 time.sleep(self.ARTIST_FETCH_DELAY_SECONDS)
             else:

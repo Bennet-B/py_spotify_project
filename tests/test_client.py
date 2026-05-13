@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+from spotipy.exceptions import SpotifyException
 
 from spotify_project.cache import FileCache
 from spotify_project.client import SpotifyClient
@@ -227,8 +228,6 @@ def test_artists_throttles_between_uncached_fetches(tmp_path: Path) -> None:
     Pins the throttle behavior: a 2-artist fetch with a cold cache should
     invoke time.sleep twice, with the value from ARTIST_FETCH_DELAY_SECONDS.
     """
-    from unittest.mock import patch
-
     cache = FileCache(root=tmp_path)
     fake_sp = MagicMock()
     fake_sp.artist.side_effect = [
@@ -317,3 +316,74 @@ def test_spotify_client_init_defaults_genre_enricher_to_none(tmp_path: Path) -> 
     sp = MagicMock()
     client = SpotifyClient(sp=sp, cache=cache)
     assert client.genre_enricher is None
+
+
+def _rate_limit_exc(retry_after: str | None) -> SpotifyException:
+    """Build a SpotifyException as spotipy would surface a 429.
+
+    When ``retry_after`` is None, the exception carries an empty headers dict — mimicking spotipy's urllib3-retry-exhaustion path where the Retry-After is dropped.
+    """
+    headers = {"Retry-After": retry_after} if retry_after is not None else {}
+    return SpotifyException(429, -1, "rate limit", reason=None, headers=headers)
+
+
+def test_call_retries_once_when_retry_after_below_threshold(tmp_path: Path) -> None:
+    """Short Retry-After: _call sleeps once then succeeds on retry."""
+    cache = FileCache(root=tmp_path)
+    fake_sp = MagicMock()
+    fake_sp.artist.side_effect = [
+        _rate_limit_exc("5"),
+        {"id": "a1", "name": "Alice", "genres": []},
+    ]
+
+    client = SpotifyClient(sp=fake_sp, cache=cache)
+    with patch("spotify_project.client.time.sleep") as mock_sleep:
+        artists = client.fetch_artists(["a1"])
+
+    assert len(artists) == 1
+    assert artists[0].name == "Alice"
+    # Two sleeps: one for the 5s rate-limit backoff, one for the post-fetch throttle.
+    sleep_durations = sorted(call.args[0] for call in mock_sleep.call_args_list)
+    assert sleep_durations == [SpotifyClient.ARTIST_FETCH_DELAY_SECONDS, 5]
+
+
+def test_call_raises_when_retry_after_exceeds_threshold(tmp_path: Path) -> None:
+    """Long Retry-After: _call refuses to sleep and raises RuntimeError without invoking time.sleep with the cooldown."""
+    cache = FileCache(root=tmp_path)
+    fake_sp = MagicMock()
+    huge_retry = str(SpotifyClient.MAX_RATE_LIMIT_WAIT_SECONDS + 60)
+    fake_sp.artist.side_effect = _rate_limit_exc(huge_retry)
+
+    client = SpotifyClient(sp=fake_sp, cache=cache)
+    with (
+        patch("spotify_project.client.time.sleep") as mock_sleep,
+        pytest.raises(RuntimeError, match="refusing to wait"),
+    ):
+        client.fetch_artists(["a1"])
+
+    # The post-fetch throttle never runs because the fetch raised; no rate-limit sleep should have happened either.
+    for call in mock_sleep.call_args_list:
+        assert call.args[0] != int(huge_retry)
+
+
+def test_call_raises_when_retry_after_header_missing(tmp_path: Path) -> None:
+    """Missing Retry-After defaults above the threshold so _call bails out rather than retrying blindly."""
+    cache = FileCache(root=tmp_path)
+    fake_sp = MagicMock()
+    fake_sp.artist.side_effect = _rate_limit_exc(None)
+
+    client = SpotifyClient(sp=fake_sp, cache=cache)
+    with patch("spotify_project.client.time.sleep"), pytest.raises(RuntimeError, match="refusing to wait"):
+        client.fetch_artists(["a1"])
+
+
+def test_call_passes_non_429_spotify_exception_through(tmp_path: Path) -> None:
+    """Non-429 SpotifyException is not caught by the rate-limit guard."""
+    cache = FileCache(root=tmp_path)
+    fake_sp = MagicMock()
+    fake_sp.artist.side_effect = SpotifyException(500, -1, "server error", headers={})
+
+    client = SpotifyClient(sp=fake_sp, cache=cache)
+    with pytest.raises(SpotifyException) as excinfo:
+        client.fetch_artists(["a1"])
+    assert excinfo.value.http_status == 500  # pyright: ignore[reportUnknownMemberType]

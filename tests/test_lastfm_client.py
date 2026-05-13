@@ -265,7 +265,7 @@ def test_fetch_artist_tags_raises_when_rate_limit_persists(cache: FileCache) -> 
     with (
         patch("spotify_project.lastfm_client.urlopen", side_effect=side_effects),
         patch("spotify_project.lastfm_client.time.sleep") as mock_sleep,
-        pytest.raises(RuntimeError, match="rate limit"),
+        pytest.raises(RuntimeError, match="rate.?limit persisted"),
     ):
         client.fetch_artist_tags("x", "X")
     assert mock_sleep.call_count == 1
