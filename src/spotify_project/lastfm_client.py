@@ -16,9 +16,8 @@ logger = logging.getLogger(__name__)
 class LastFmClient:
     """Last.fm Web API client used to enrich Spotify artists with tags.
 
-    Wraps the unauthenticated ``artist.getTopTags`` endpoint. Tags are
-    lowercased here (once) so downstream code (Artist, genre_taxonomy filter,
-    analyzers) can rely on lowercase invariants.
+    Wraps the unauthenticated ``artist.getTopTags`` endpoint.
+    Tags are lowercased here (once) so downstream code (Artist, genre_taxonomy filter, analyzers) can rely on lowercase invariants.
 
     Attributes:
         api_key: Last.fm API key.
@@ -35,11 +34,8 @@ class LastFmClient:
         """Construct a LastFmClient with explicit dependencies.
 
         Args:
-            api_key: Non-empty Last.fm API key. The factory ``from_env``
-                enforces non-empty-ness; direct callers are trusted to pass
-                a real key.
-            cache: FileCache used to persist per-artist tag lists under the
-                ``lastfm_artist/<spotify_artist_id>`` key prefix.
+            api_key: Non-empty Last.fm API key. The factory ``from_env`` enforces non-empty-ness; direct callers are trusted to pass a real key.
+            cache: FileCache used to persist per-artist tag lists under the ``lastfm_artist/<spotify_artist_id>`` key prefix.
         """
         self.api_key = api_key
         self.cache = cache
@@ -48,17 +44,14 @@ class LastFmClient:
     def from_env(cls, cache: FileCache) -> LastFmClient | None:
         """Build a LastFmClient from the LASTFM_API_KEY env var.
 
-        Reads the key from ``os.environ``. Returns None and emits a single
-        INFO log line when the key is unset or empty — Last.fm enrichment is
-        optional; the notebook degrades gracefully and TagAnalyzer/GenreAnalyzer
-        get skipped instead of producing empty panels.
+        Reads the key from ``os.environ``. Returns None and emits a single INFO log line when the key is unset or empty — Last.fm enrichment is optional;
+        the notebook degrades gracefully and TagAnalyzer/GenreAnalyzer get skipped instead of producing empty panels.
 
         Args:
             cache: FileCache for response persistence.
 
         Returns:
-            A configured LastFmClient, or None when LASTFM_API_KEY is unset
-            or blank.
+            A configured LastFmClient, or None when LASTFM_API_KEY is unset or blank.
         """
         key = os.environ.get("LASTFM_API_KEY", "").strip()
         if not key:
@@ -66,19 +59,11 @@ class LastFmClient:
             return None
         return cls(api_key=key, cache=cache)
 
-    def fetch_artist_tags(
-        self,
-        spotify_artist_id: str,
-        artist_name: str,
-        *,
-        force_refresh: bool = False,
-    ) -> tuple[str, ...]:
+    def fetch_artist_tags(self, spotify_artist_id: str, artist_name: str, *, force_refresh: bool = False) -> tuple[str, ...]:
         """Return the top-N Last.fm tags for an artist.
 
-        Tags are lowercased and returned in descending-weight order. Cached
-        under ``lastfm_artist/<spotify_artist_id>.json`` with a 365-day TTL.
-        Negative results (artist not found) are cached too. Rate-limit
-        responses trigger a single retry; persistent rate-limit raises.
+        Tags are lowercased and returned in descending-weight order. Cached under ``lastfm_artist/<spotify_artist_id>.json`` with a 365-day TTL.
+        Negative results (artist not found) are cached too. Rate-limit responses trigger a single retry; persistent rate-limit raises.
 
         Args:
             spotify_artist_id: Spotify artist ID, used as the cache key.
@@ -89,8 +74,7 @@ class LastFmClient:
             Tuple of up to DEFAULT_TOP_N lowercased tags, descending-weight order.
 
         Raises:
-            RuntimeError: On persistent rate-limit (code 29 twice) or any
-                non-"not found" Last.fm error.
+            RuntimeError: On persistent rate-limit (code 29 twice) or any non-"not found" Last.fm error.
         """
         cache_key = f"lastfm_artist/{spotify_artist_id}"
         cached = None if force_refresh else self.cache.get(cache_key, ttl_days=self.CACHE_TTL_DAYS)
@@ -117,7 +101,6 @@ class LastFmClient:
                 break  # attempt 1 still rate-limited — fall to post-loop raise
             message = data.get("message", "<no message>")
             raise RuntimeError(f"Last.fm error {error_code} for artist {artist_name!r}: {message}")
-        # Rate limit persisted across both attempts.
         raise RuntimeError(f"Last.fm rate limit persisted after retry for artist {artist_name!r}")
 
     def _call_get_top_tags(self, artist_name: str) -> dict[str, Any]:
@@ -127,8 +110,7 @@ class LastFmClient:
             artist_name: Display name, URL-encoded into the query string.
 
         Returns:
-            The parsed JSON body. The caller must inspect the ``error`` key
-            (Last.fm uses HTTP 200 + error code in body to report failures).
+            The parsed JSON body. The caller must inspect the ``error`` key (Last.fm uses HTTP 200 + error code in body to report failures).
         """
         params = {
             "method": "artist.getTopTags",
@@ -146,9 +128,7 @@ class LastFmClient:
     def _extract_tags(self, data: dict[str, Any]) -> tuple[str, ...]:
         """Pull and normalize the tag list from a Last.fm response body.
 
-        Last.fm's XML-to-JSON layer sometimes returns a single tag as a
-        bare dict instead of a 1-element list; we normalize both shapes.
-        Tags are lowercased and trimmed.
+        Last.fm's XML-to-JSON layer sometimes returns a single tag as a bare dict instead of a 1-element list; we normalize both shapes. Tags are lowercased and trimmed.
 
         Args:
             data: Parsed JSON body from the Last.fm API.

@@ -31,9 +31,7 @@ class SpotifyClient:
     Attributes:
         sp: The wrapped spotipy.Spotify client.
         cache: FileCache for API response persistence.
-        genre_enricher: Optional Last.fm client. When set, ``_enrich_with_artists``
-            calls ``fetch_artist_tags`` per artist after Spotify resolves;
-            when None, ``Artist.tags`` stays empty.
+        genre_enricher: Optional Last.fm client. When set, ``_enrich_with_artists`` calls ``fetch_artist_tags`` per artist after Spotify resolves; when None, ``Artist.tags`` stays empty.
     """
 
     DEFAULT_SCOPES: ClassVar[list[str]] = [
@@ -61,25 +59,13 @@ class SpotifyClient:
     # Cache hits skip the sleep, so a warm cache pays no overhead.
     ARTIST_FETCH_DELAY_SECONDS: ClassVar[float] = 0.25
 
-    def __init__(
-        self,
-        sp: spotipy.Spotify,
-        cache: FileCache,
-        *,
-        genre_enricher: LastFmClient | None = None,
-    ) -> None:
+    def __init__(self, sp: spotipy.Spotify, cache: FileCache, *, genre_enricher: LastFmClient | None = None) -> None:
         self.sp = sp
         self.cache = cache
         self.genre_enricher = genre_enricher
 
     @classmethod
-    def from_env(
-        cls,
-        cache: FileCache,
-        scopes: list[str] | None = None,
-        *,
-        genre_enricher: LastFmClient | None = None,
-    ) -> SpotifyClient:
+    def from_env(cls, cache: FileCache, scopes: list[str] | None = None, *, genre_enricher: LastFmClient | None = None) -> SpotifyClient:
         """Build an OAuth-authenticated client from SPOTIPY_* env vars.
 
         Reads required credentials from the process environment (loaded from ``.env`` via python-dotenv at notebook startup, or set as OS env vars).
@@ -88,9 +74,7 @@ class SpotifyClient:
         Args:
             cache: FileCache for API response persistence.
             scopes: OAuth scopes; defaults to ``DEFAULT_SCOPES`` (read-only).
-            genre_enricher: Optional Last.fm client for tag enrichment.
-                When None (default), Artist.tags stays empty and the
-                TagAnalyzer / GenreAnalyzer panels are skipped downstream.
+            genre_enricher: Optional Last.fm client for tag enrichment. When None (default), Artist.tags stays empty and the TagAnalyzer / GenreAnalyzer panels are skipped downstream.
 
         Returns:
             An authenticated SpotifyClient. Triggers a browser-based OAuth flow on first run; subsequent runs use spotipy's local token cache.
@@ -234,8 +218,7 @@ class SpotifyClient:
                     "added_at": it.get("added_at"),
                     "is_local": False,
                 }
-                for it in raw_items
-                if it.get("track")
+                for it in raw_items if it.get("track")
             ]
             if dropped > 0:
                 logger.info("Dropped %d null tracks from liked songs", dropped)
@@ -260,21 +243,16 @@ class SpotifyClient:
     def _enrich_with_artists(self, track_items: list[dict[str, Any]], *, force_refresh: bool = False) -> list[Track]:
         """Filter to audio tracks, resolve artist lookups, and return Track objects.
 
-        One pipeline runs in two stages: filter to audio tracks → collect unique
-        artist IDs → batch-fetch Spotify artists via ``fetch_artists()``. If
-        ``genre_enricher`` is set, a second pass over the resolved artists calls
-        ``LastFmClient.fetch_artist_tags`` per artist and rebuilds the in-memory
-        artist map with populated ``tags``; the Spotify-side cache is never
-        modified.
+        One pipeline runs in two stages: filter to audio tracks → collect unique artist IDs → batch-fetch Spotify artists via ``fetch_artists()``. If ``genre_enricher`` is set,
+        a second pass over the resolved artists calls ``LastFmClient.fetch_artist_tags`` per artist and rebuilds the in-memory artist map with populated ``tags``;
+        the Spotify-side cache is never modified.
 
         Args:
             track_items: Raw playlist-item dicts using the ``item`` key schema.
-            force_refresh: Passed through to both ``fetch_artists()`` and
-                ``LastFmClient.fetch_artist_tags()``.
+            force_refresh: Passed through to both ``fetch_artists()`` and ``LastFmClient.fetch_artist_tags()``.
 
         Returns:
-            List of fully-enriched Track objects (podcast episodes and
-            local-file items dropped).
+            List of fully-enriched Track objects (podcast episodes and local-file items dropped).
         """
         audio_tracks = [it for it in track_items if it.get("item") and it["item"].get("type") == "track"]
         dropped = len(track_items) - len(audio_tracks)
@@ -291,11 +269,7 @@ class SpotifyClient:
         if self.genre_enricher is not None:
             logger.info("Enriching %d artists with Last.fm tags", len(artist_by_id))
             enriched: dict[str, Artist] = {}
-            iter_artists: Iterable[Artist] = _tqdm_cls(  # pyright: ignore[reportUnknownVariableType]
-                artist_by_id.values(),
-                desc="Enriching with Last.fm tags",
-                unit="artist",
-            )
+            iter_artists: Iterable[Artist] = _tqdm_cls(artist_by_id.values(), desc="Enriching with Last.fm tags", unit="artist") # pyright: ignore[reportUnknownVariableType]
             for artist in iter_artists:
                 tags = self.genre_enricher.fetch_artist_tags(artist.id, artist.name, force_refresh=force_refresh)
                 enriched[artist.id] = replace(artist, tags=tags)

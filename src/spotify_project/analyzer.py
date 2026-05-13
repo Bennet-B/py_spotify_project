@@ -32,9 +32,7 @@ def _get_coverage(summary: pd.DataFrame) -> tuple[int, int]:
 def _top_n_from_list_column(df: pd.DataFrame, column: str, top_n: int, value_label: str) -> pd.DataFrame:
     """Frequency-count a DataFrame list-column and return the top N.
 
-    Used by TagAnalyzer (column='tags') and GenreAnalyzer (column='genres') —
-    both share the explode-and-group-by shape; only the column name and the
-    output label differ.
+    Used by TagAnalyzer (column='tags') and GenreAnalyzer (column='genres') — both share the explode-and-group-by shape; only the column name and the output label differ.
 
     Args:
         df: Track-level DataFrame.
@@ -43,9 +41,8 @@ def _top_n_from_list_column(df: pd.DataFrame, column: str, top_n: int, value_lab
         value_label: Output column name for the labels (e.g. 'tag' or 'genre').
 
     Returns:
-        DataFrame with columns ``[value_label, 'count']``, descending count,
-        limited to ``top_n`` rows. Empty DataFrame with the right columns
-        when ``df`` is empty or ``column`` is missing.
+        DataFrame with columns ``[value_label, 'count']``, descending count, limited to ``top_n`` rows.
+        Empty DataFrame with the right columns when ``df`` is empty or ``column`` is missing.
     """
     empty = pd.DataFrame({value_label: [], "count": []})
     if df.empty or column not in df.columns:
@@ -87,22 +84,15 @@ def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
 class Analyzer(ABC):
     """Abstract analyzer over a track DataFrame.
 
-    Concrete subclasses override ``analyze`` (returns a summary DataFrame) and
-    ``plot`` (renders the result onto a Matplotlib Axes provided by the caller).
-    Each subclass MUST also declare a non-empty class-level ``title``; this is
-    enforced at class-definition time.
+    Concrete subclasses override ``analyze`` (returns a summary DataFrame) and ``plot`` (renders the result onto a Matplotlib Axes provided by the caller).
+    Each subclass MUST also declare a non-empty class-level ``title``; this is enforced at class-definition time.
 
     Attributes:
-        title: Short title; appears as the plot's title and is used as the
-            key in ``PlaylistAnalyzer.run_all``'s result dict.
+        title: Short title; appears as the plot's title and is used as the key in ``PlaylistAnalyzer.run_all``'s result dict.
         default_color: Default bar/line color for plot().
-        skip_message: If set, ``PlaylistAnalyzer.run_all`` and ``plot_all``
-            skip this analyzer when its ``coverage()`` returns ``(0, n)``.
-            Default None means "always run, even at zero coverage" (the
-            analyzer's own ``plot`` renders an empty-state placeholder).
-            Use skip_message for analyzers whose data source can be entirely
-            absent (e.g. tags without a Last.fm key) — the user-visible
-            message is logged when the skip triggers.
+        skip_message: If set, ``PlaylistAnalyzer.run_all`` and ``plot_all`` skip this analyzer when its ``coverage()`` returns ``(0, n)``.
+            Default None means "always run, even at zero coverage" (the analyzer's own ``plot`` renders an empty-state placeholder).
+            Use skip_message for analyzers whose data source can be entirely absent (e.g. tags without a Last.fm key) — the user-visible message is logged when the skip triggers.
     """
 
     title: ClassVar[str]
@@ -169,13 +159,10 @@ class Analyzer(ABC):
 class TagAnalyzer(Analyzer):
     """Top Last.fm tags by track count.
 
-    Tags are raw folksonomy: real genres alongside eras (``00s``), geography
-    (``british``), behavior (``seen live``), sentiment (``favorite``). Useful
-    as a complete view of how listeners describe these artists, and as a
-    curation aid when refining the whitelist that drives GenreAnalyzer.
+    Tags are raw folksonomy: real genres alongside eras (``00s``), geography (``british``), behavior (``seen live``), sentiment (``favorite``).
+    Useful as a complete view of how listeners describe these artists, and as a curation aid when refining the whitelist that drives GenreAnalyzer.
 
-    Skipped by ``PlaylistAnalyzer.run_all`` when no track has any tag — typically
-    because LASTFM_API_KEY is unset.
+    Skipped by ``PlaylistAnalyzer.run_all`` when no track has any tag — typically because LASTFM_API_KEY is unset.
 
     Args:
         top_n: How many tags to return; default 15.
@@ -203,8 +190,7 @@ class TagAnalyzer(Analyzer):
             df: Track-level DataFrame with a ``tags`` column (list-valued).
 
         Returns:
-            DataFrame with columns ``tag`` and ``count``, descending count,
-            limited to ``top_n`` rows.
+            DataFrame with columns ``tag`` and ``count``, descending count, limited to ``top_n`` rows.
         """
         result = _top_n_from_list_column(df, "tags", self.top_n, "tag")
         return self._attach_coverage(result, df)
@@ -256,8 +242,7 @@ class GenreAnalyzer(Analyzer):
             df: Track-level DataFrame with a ``genres`` column (list-valued).
 
         Returns:
-            DataFrame with columns ``genre`` and ``count``, descending count,
-            limited to ``top_n`` rows.
+            DataFrame with columns ``genre`` and ``count``, descending count,  limited to ``top_n`` rows.
         """
         result = _top_n_from_list_column(df, "genres", self.top_n, "genre")
         return self._attach_coverage(result, df)
@@ -706,8 +691,7 @@ class PlaylistAnalyzer:
     def run_all(self) -> dict[str, pd.DataFrame]:
         """Run every registered Analyzer; returns ``{title: summary_df}``.
 
-        Analyzers whose ``coverage(df)`` returns ``(0, n)`` AND that have set
-        ``skip_message`` are skipped entirely (no entry in the result dict);
+        Analyzers whose ``coverage(df)`` returns ``(0, n)`` AND that have set ``skip_message`` are skipped entirely (no entry in the result dict);
         a single INFO log line records the skip and the analyzer's hint.
         """
         out: dict[str, pd.DataFrame] = {}
@@ -723,9 +707,8 @@ class PlaylistAnalyzer:
     def plot_all(self, fig: Figure) -> None:
         """Lay out one subplot per non-skipped analyzer in a vertical stack on ``fig``.
 
-        Analyzers whose ``coverage(df)`` returns ``(0, n)`` AND that have set
-        ``skip_message`` are skipped — no subplot allocated. The log line is
-        emitted by ``run_all``, which this method calls.
+        Analyzers whose ``coverage(df)`` returns ``(0, n)`` AND that have set ``skip_message`` are skipped — no subplot allocated.
+        The log line is emitted by ``run_all``, which this method calls.
 
         Args:
             fig: Matplotlib Figure to subdivide with subplots.

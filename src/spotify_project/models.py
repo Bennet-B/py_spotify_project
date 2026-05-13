@@ -17,9 +17,7 @@ class Artist:
     Attributes:
         id: Spotify artist ID.
         name: Display name.
-        tags: Raw Last.fm tags, lowercased, in descending-weight order.
-            Empty when Last.fm enrichment is disabled or the artist is
-            unknown to Last.fm.
+        tags: Raw Last.fm tags, lowercased, in descending-weight order. Empty when Last.fm enrichment is disabled or the artist is unknown to Last.fm.
     """
 
     id: str
@@ -31,8 +29,7 @@ class Artist:
         """Whitelist-filtered subset of tags, preserving descending-weight order.
 
         Recomputed on every access (cheap: a tuple comprehension over <=10 items).
-        Whitelist edits in genre_taxonomy.py take effect immediately on next read,
-        with no need to rebuild Artist instances or re-fetch from Last.fm.
+        Whitelist edits in genre_taxonomy.py take effect immediately on next read, with no need to rebuild Artist instances or re-fetch from Last.fm.
 
         Returns:
             Tuple of whitelisted genre tags in the same order they appear in tags.
@@ -44,10 +41,8 @@ class Artist:
         """Parse a Spotify artist API response.
 
         Args:
-            data: A spotipy artist dict with keys id and name. The legacy
-                ``genres`` field (always empty for our app) is ignored;
-                tags come from Last.fm enrichment, attached later by
-                ``SpotifyClient._enrich_with_artists`` via dataclasses.replace.
+            data: A spotipy artist dict with keys id and name. The legacy ``genres`` field (always empty for our app) is ignored;
+                tags come from Last.fm enrichment, attached later by ``SpotifyClient._enrich_with_artists`` via dataclasses.replace.
 
         Returns:
             The constructed Artist with empty tags. Enrichment fills tags later.

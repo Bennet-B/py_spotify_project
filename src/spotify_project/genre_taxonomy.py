@@ -3,8 +3,7 @@ from __future__ import annotations
 GENRE_WHITELIST: frozenset[str] = frozenset(
     {
         # Widely-recognized genre names, all lowercase. Add entries as needed.
-        # LastFmClient lowercases tags before they reach this filter, so the
-        # filter does a pure membership check with no normalization.
+        # LastFmClient lowercases tags before they reach this filter, so the filter does a pure membership check with no normalization.
         "rock",
         "pop",
         "indie",
@@ -103,15 +102,12 @@ GENRE_WHITELIST: frozenset[str] = frozenset(
 def filter_to_genres(tags: tuple[str, ...]) -> list[str]:
     """Return the whitelisted subset of ``tags``, preserving input order.
 
-    Tags are expected lowercase (lowercasing happens upstream in
-    ``LastFmClient.fetch_artist_tags``), so the filter is a pure membership
-    check with no normalization.
+    Tags are expected lowercase (lowercasing happens upstream in ``LastFmClient.fetch_artist_tags``), so the filter is a pure membership check with no normalization.
 
     Args:
         tags: Lowercased tags in descending-weight order, as stored on Artist.
 
     Returns:
-        A new list containing only the tags that appear in GENRE_WHITELIST,
-        in the same order they appeared in ``tags``.
+        A new list containing only the tags that appear in GENRE_WHITELIST, in the same order they appeared in ``tags``.
     """
     return [t for t in tags if t in GENRE_WHITELIST]
