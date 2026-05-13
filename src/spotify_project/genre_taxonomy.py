@@ -44,7 +44,6 @@ GENRE_WHITELIST: frozenset[str] = frozenset(
         "ambient",
         "drum and bass",
         "dubstep",
-        # Hyphenated genres become space-form after separator normalization in LastFmClient._normalize_tag, so the whitelist matches the post-normalization form.
         "edm",
         "idm",
         "synthwave",

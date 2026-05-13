@@ -648,7 +648,8 @@ class PlaylistAnalyzer:
     def from_playlist(cls, playlist: Playlist, analyzers: list[Analyzer] | None = None) -> PlaylistAnalyzer:
         """Build a PlaylistAnalyzer from a Playlist by flattening tracks.
 
-        ``primary_artist_*`` columns come from the lead artist; ``tags`` and ``genres`` are the union (order-preserving dedup) across **all** artists on the track, so a featured artist's metadata isn't discarded. Local files (``is_local=True``) yield empty ``tags``/``genres`` and ``None`` for artist IDs.
+        ``primary_artist_*`` columns come from the lead artist; ``tags`` and ``genres`` are the union (order-preserving dedup) across **all** artists on the track,
+        so a featured artist's metadata isn't discarded. Local files (``is_local=True``) yield empty ``tags``/``genres`` and ``None`` for artist IDs.
 
         Args:
             playlist: Source Playlist with full Track + Artist data.
