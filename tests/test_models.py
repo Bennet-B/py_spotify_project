@@ -46,9 +46,7 @@ def test_track_negative_duration_raises() -> None:
         )
 
 
-def test_track_from_api_warns_on_unknown_artist_id(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_track_from_api_warns_on_unknown_artist_id(caplog: pytest.LogCaptureFixture) -> None:
     """Track.from_api logs a warning when an artist ID is missing from the lookup."""
     item: dict[str, Any] = {
         "item": {
@@ -90,16 +88,14 @@ def test_artist_genres_preserves_tag_order() -> None:
     from spotify_project.genre_taxonomy import filter_to_genres
     from spotify_project.models import Artist
 
-    # Both orderings should round-trip through the property unchanged
-    # whenever the inputs survive the whitelist filter.
+    # Both orderings should round-trip through the property unchanged whenever the inputs survive the whitelist filter.
     for tags in [("indie", "rock"), ("rock", "indie")]:
         a = Artist(id="x", name="y", tags=tags)
         assert a.genres == tuple(filter_to_genres(tags))
 
 
 def test_artist_from_api_ignores_legacy_genres_field() -> None:
-    # Spotify still emits an empty `genres` list for our app; we drop the field.
-    # If they ever started returning values, we'd ignore them — Last.fm is the source.
+    # Spotify still emits an empty `genres` list for our app; we drop the field. If they ever started returning values, we'd ignore them — Last.fm is the source.
     from spotify_project.models import Artist
 
     a = Artist.from_api({"id": "x", "name": "y", "genres": ["leftover"]})

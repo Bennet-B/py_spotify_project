@@ -36,8 +36,7 @@ def test_unsafe_key_with_traversal_raises(tmp_path: Path) -> None:
 def test_get_with_ttl_override_overrides_instance_default(tmp_path: Path) -> None:
     """FileCache.get accepts a per-call ttl_days override.
 
-    A value past the instance's default TTL but within the override
-    returns; without the override (instance default) it returns None.
+    A value past the instance's default TTL but within the override returns; without the override (instance default) it returns None.
     """
     cache = FileCache(root=tmp_path, ttl_days=1.0)
     cache.put("artist/a1", {"name": "Alice"})

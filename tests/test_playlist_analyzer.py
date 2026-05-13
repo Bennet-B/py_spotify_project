@@ -10,8 +10,7 @@ from spotify_project.analyzer import PlaylistAnalyzer
 def test_to_parquet_round_trip_preserves_schema(tmp_path: Path) -> None:
     """to_parquet → read_parquet preserves columns and values exactly.
 
-    Especially important for the list columns (``artist_ids``, ``artist_names``,
-    ``genres``) which parquet stores as nested types.
+    Especially important for the list columns (``artist_ids``, ``artist_names``, ``genres``) which parquet stores as nested types.
     """
     df = pd.DataFrame(
         [
