@@ -2,7 +2,7 @@
 
 Three responsibilities:
 
-1. ``RedactAuthFilter`` — a logging filter that scrubs Bearer / Basic auth headers and refresh tokens from any log record.
+1. ``RedactAuthFilter`` — a logging filter that scrubs Bearer / Basic auth headers and OAuth access/refresh token bodies from any log record.
    Defense-in-depth: even if a third-party logger (spotipy, urllib3) is bumped to DEBUG, no credentials reach stdout / stderr / committed notebook outputs.
 
 2. ``TqdmLoggingHandler`` — a logging handler that emits records via ``tqdm.write()`` instead of plain stderr.
@@ -25,28 +25,32 @@ __all__ = ["RedactAuthFilter", "TqdmLoggingHandler", "configure_logging"]
 
 
 class RedactAuthFilter(logging.Filter):
-    """Scrub Bearer / Basic auth headers and refresh tokens from log records.
+    """Scrub Bearer / Basic auth headers and OAuth access/refresh token bodies from log records.
 
+    Covers ``Bearer <token>`` / ``Basic <base64>`` header forms and quoted token bodies (``'access_token': '...'`` / ``"refresh_token": "..."``)
+    as they appear in repr- or JSON-style OAuth response dumps.
     The scrub is in-place on the formatted message.
     The original ``record.msg`` and ``record.args`` are replaced so the redaction survives any later formatter or handler.
 
+    Attach to a *handler* (not a logger) to cover propagated records — logger-level filters only run for records logged directly on that logger.
+
     Example:
         >>> import logging
-        >>> logger = logging.getLogger("test")
-        >>> logger.addFilter(RedactAuthFilter())
+        >>> handler = logging.StreamHandler()
+        >>> handler.addFilter(RedactAuthFilter())
         >>> # A record with "Bearer abc123" becomes "***REDACTED***" in output.
     """
 
     _PATTERN = re.compile(
         r"Bearer\s+[A-Za-z0-9_\-]+"
         r"|Basic\s+[A-Za-z0-9+/=]+"
-        r"|'refresh_token':\s*'[^']+'"
+        r"|[\"'](?:access|refresh)_token[\"']:\s*[\"'][^\"']+[\"']"
     )
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Redact credential patterns in-place; always return True (keep record)."""
         msg = record.getMessage()
-        if "Bearer " in msg or "Basic " in msg or "refresh_token" in msg:
+        if "Bearer " in msg or "Basic " in msg or "_token" in msg:
             record.msg = self._PATTERN.sub("***REDACTED***", msg)
             record.args = ()
         return True
@@ -66,7 +70,7 @@ class TqdmLoggingHandler(logging.Handler):
             msg = self.format(record)
             tqdm.write(msg)
             self.flush()
-        except Exception:  # noqa: BLE001 — stdlib's logging contract: handlers must not raise.
+        except Exception:  # stdlib's logging contract: handlers must not raise.
             self.handleError(record)
 
 
@@ -75,21 +79,21 @@ def configure_logging(app_level: str = "INFO", third_party_level: str = "WARNING
 
     Installs a single ``TqdmLoggingHandler`` on the root logger so log output co-exists cleanly with tqdm progress bars.
     Removes any previously attached handlers so this is safe to call after another library (or a previous notebook cell) has already configured the root logger.
-    Attaches ``RedactAuthFilter`` to the root logger.
+    Attaches ``RedactAuthFilter`` to that handler — handler-level, because logger-level filters never see records propagated from child loggers (spotipy, urllib3, spotify_project.*).
 
     Args:
         app_level: Level for ``spotify_project.*`` loggers — our own code. Default ``"INFO"``.
         third_party_level: Level for everything else (spotipy, urllib3, ...). Default ``"WARNING"``.
 
     Raises:
-        AttributeError: If ``app_level`` or ``third_party_level`` is not a valid ``logging`` level name.
+        ValueError: If ``app_level`` or ``third_party_level`` is not a valid ``logging`` level name.
     """
     root = logging.getLogger()
     for existing in list(root.handlers):
         root.removeHandler(existing)
     handler = TqdmLoggingHandler()
     handler.setFormatter(logging.Formatter("%(name)s - %(levelname)s - %(message)s"))
+    handler.addFilter(RedactAuthFilter())
     root.addHandler(handler)
-    root.setLevel(getattr(logging, third_party_level))
-    logging.getLogger("spotify_project").setLevel(getattr(logging, app_level))
-    root.addFilter(RedactAuthFilter())
+    root.setLevel(third_party_level)
+    logging.getLogger("spotify_project").setLevel(app_level)
