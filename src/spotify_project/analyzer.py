@@ -2,11 +2,14 @@ from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
 # matplotlib's Axes stubs forward `**kwargs: Unknown` on most methods; the methods themselves are typed, but the kwarg propagation has no per-call workaround.
+# Deliberate tradeoff: this file-wide directive also silences unknown-member reporting on the pandas calls in the analyze() methods (where pandas-stubs would
+# give real signal) — per-line ignores across every plot() call were judged noisier than the coverage lost. client.py shows the per-line alternative.
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar
 
+import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -19,7 +22,12 @@ logger = logging.getLogger(__name__)
 
 _LOW_COVERAGE_THRESHOLD = 0.7
 
-# A color accepted by Matplotlib: either a CSS hex/name string or an RGB float-triple (0.0–1.0 per channel) as returned by seaborn palettes.
+# Plausibility window for release years. Spotify metadata occasionally carries junk like "0000",
+# which would otherwise count as valid coverage and stretch the year axis across two millennia.
+_MIN_PLAUSIBLE_RELEASE_YEAR = 1900
+_MAX_PLAUSIBLE_RELEASE_YEAR = 2100
+
+# A color accepted by Matplotlib: either a CSS hex/name string or an RGB float-triple (0.0-1.0 per channel) as returned by seaborn palettes.
 _Color = str | tuple[float, float, float]
 
 
@@ -65,12 +73,9 @@ def _style_axes(ax: Axes, base_title: str, summary: pd.DataFrame) -> None:
         summary: The analyze() output. Used to read ``attrs["coverage"]``.
     """
     suffix = ""
-    match _get_coverage(summary):
-        case (n_data, n_total) if n_total > 0 and n_data < n_total:
-            pct = n_data / n_total
-            suffix = f" ({n_data}/{n_total} tracks, {pct:.0%} coverage)"
-        case _:
-            pass
+    n_data, n_total = _get_coverage(summary)
+    if n_total > 0 and n_data < n_total:
+        suffix = f" ({n_data}/{n_total} tracks, {n_data / n_total:.0%} coverage)"
     ax.set_title(base_title + suffix, fontsize=12, fontweight="bold")
     ax.tick_params(colors="#666", labelsize=9)
     xlabel = ax.get_xlabel()
@@ -99,6 +104,15 @@ class Analyzer(ABC):
     default_color: ClassVar[_Color] = "#1f77b4"
     skip_message: ClassVar[str | None] = None
 
+    def __init__(self, *, title: str | None = None) -> None:
+        """Store the optional per-instance title override.
+
+        Args:
+            title: Per-instance title; lets multiple instances of the same subclass coexist in one ``PlaylistAnalyzer`` without colliding on the dict key in ``run_all``.
+                ``None`` (default) falls back to the class-level ``title``.
+        """
+        self._instance_title = title
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "title", None):
@@ -106,13 +120,8 @@ class Analyzer(ABC):
 
     @property
     def effective_title(self) -> str:
-        """Return the per-instance title if set, else the class-level ``title``.
-
-        Per-instance titles are set by passing ``title=`` to a concrete analyzer's constructor.
-        They let multiple instances of the same subclass coexist in one ``PlaylistAnalyzer`` without colliding on the dict key in ``run_all``.
-        """
-        instance_title = getattr(self, "_instance_title", None)
-        return instance_title if instance_title is not None else type(self).title
+        """Return the per-instance title if set, else the class-level ``title``."""
+        return self._instance_title if self._instance_title is not None else type(self).title
 
     @abstractmethod
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -173,14 +182,17 @@ class TagAnalyzer(Analyzer):
     skip_message = "no tag data — set LASTFM_API_KEY to enable."
 
     def __init__(self, top_n: int = 15, *, title: str | None = None) -> None:
+        super().__init__(title=title)
         self.top_n = top_n
-        self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
-        """Count rows whose ``tags`` list is non-empty."""
+        """Count rows whose ``tags`` collection is non-empty.
+
+        ``Series.str.len()`` instead of an isinstance check: a parquet round-trip turns list columns into numpy arrays, which must still count as covered.
+        """
         if df.empty or "tags" not in df.columns:
             return (0, len(df))
-        n_with = int(df["tags"].apply(lambda t: bool(t) if isinstance(t, list) else False).sum())  # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+        n_with = int((df["tags"].str.len() > 0).sum())
         return (n_with, len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -225,14 +237,17 @@ class GenreAnalyzer(Analyzer):
     skip_message = "no genres after whitelist filtering — set LASTFM_API_KEY to enable, or extend GENRE_WHITELIST in genre_taxonomy.py."
 
     def __init__(self, top_n: int = 15, *, title: str | None = None) -> None:
+        super().__init__(title=title)
         self.top_n = top_n
-        self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
-        """Count rows whose ``genres`` list is non-empty."""
+        """Count rows whose ``genres`` collection is non-empty.
+
+        ``Series.str.len()`` instead of an isinstance check: a parquet round-trip turns list columns into numpy arrays, which must still count as covered.
+        """
         if df.empty or "genres" not in df.columns:
             return (0, len(df))
-        n_with = int(df["genres"].apply(lambda g: bool(g) if isinstance(g, list) else False).sum())  # pyright: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+        n_with = int((df["genres"].str.len() > 0).sum())
         return (n_with, len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -263,23 +278,13 @@ class GenreAnalyzer(Analyzer):
         ax.barh(summary["genre"], summary["count"], color=c)
         ax.invert_yaxis()
         ax.set_xlabel("Track count")
-        match _get_coverage(summary):
-            case (n_data, n_total) if n_total > 0 and n_data < n_total:
-                missing_frac = 1 - n_data / n_total
-                # Draw a thin grey band just below the axes, with width proportional to the missing fraction.
-                # transAxes puts both x and y in axes fraction (0..1, with negative values meaning below-bottom); clip_on=False lets it render outside the axes box.
-                ax.axhspan(
-                    ymin=-0.05,
-                    ymax=-0.01,
-                    xmin=0.0,
-                    xmax=missing_frac,
-                    facecolor="#999",
-                    alpha=0.6,
-                    transform=ax.transAxes,
-                    clip_on=False,
-                )
-            case _:
-                pass
+        n_data, n_total = _get_coverage(summary)
+        if n_total > 0 and n_data < n_total:
+            missing_frac = 1 - n_data / n_total
+            # Thin grey band just below the axes, width proportional to the missing fraction.
+            # A Rectangle via add_patch, NOT ax.axhspan: axhspan force-overrides the transform kwarg with its own y-axis transform,
+            # so the axes-fraction coordinates would silently land in data space (on top of the first bar). clip_on=False lets it render outside the axes box.
+            ax.add_patch(mpatches.Rectangle((0.0, -0.05), missing_frac, 0.04, transform=ax.transAxes, facecolor="#999", alpha=0.6, clip_on=False))
         _style_axes(ax, self.effective_title, summary)
 
 
@@ -300,21 +305,29 @@ class YearAnalyzer(Analyzer):
     def __init__(self, bucket_size: int = 1, *, title: str | None = None) -> None:
         if bucket_size < 1:
             raise ValueError(f"bucket_size must be a positive integer, got {bucket_size}")
+        super().__init__(title=title)
         self.bucket_size = bucket_size
-        self._instance_title = title
+
+    @staticmethod
+    def _plausible_years(df: pd.DataFrame) -> pd.Series[int]:
+        """Parse release years from ``release_date`` and keep only plausible values.
+
+        Handles both full ISO dates (``2020-01-01``) and year-only strings (``1979``).
+        Values outside the ``_MIN/_MAX_PLAUSIBLE_RELEASE_YEAR`` window (e.g. Spotify's junk ``"0000"``) are dropped along with unparseable ones.
+        """
+        years = pd.to_numeric(df["release_date"].str.slice(0, 4), errors="coerce").dropna().astype(int)
+        return years[(years >= _MIN_PLAUSIBLE_RELEASE_YEAR) & (years <= _MAX_PLAUSIBLE_RELEASE_YEAR)]
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
-        """Count rows with a parseable 4-digit release year."""
+        """Count rows with a parseable, plausible 4-digit release year."""
         if df.empty or "release_date" not in df.columns:
             return (0, len(df))
-        parsed = pd.to_numeric(df["release_date"].str.slice(0, 4), errors="coerce")
-        n_with = int(parsed.notna().sum())
-        return (n_with, len(df))
+        return (len(self._plausible_years(df)), len(df))
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Count tracks per release year (or per year-bucket).
 
-        Handles both full ISO dates (``2020-01-01``) and year-only strings (``1979``). Rows with ``None`` or unparseable release_date are dropped.
+        Rows with ``None``, unparseable, or implausible (outside 1900-2100) release_date values are dropped.
         When ``bucket_size > 1``, years are floor-divided onto bucket boundaries before counting.
 
         Args:
@@ -325,7 +338,7 @@ class YearAnalyzer(Analyzer):
         """
         if df.empty or "release_date" not in df.columns:
             return self._attach_coverage(pd.DataFrame({"year": [], "count": []}), df)
-        years = pd.to_numeric(df["release_date"].str.slice(0, 4), errors="coerce").dropna().astype(int)
+        years = self._plausible_years(df)
         if years.empty:
             return self._attach_coverage(pd.DataFrame({"year": [], "count": []}), df)
         if self.bucket_size > 1:
@@ -376,9 +389,9 @@ class ArtistAnalyzer(Analyzer):
     title = "Top Artists"
 
     def __init__(self, top_n: int = 15, primary_only: bool = False, *, title: str | None = None) -> None:
+        super().__init__(title=title)
         self.top_n = top_n
         self.primary_only = primary_only
-        self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
         """Count rows with a non-null ``primary_artist_id`` (local files and tracks dropped during artist enrichment have ``None``)."""
@@ -449,7 +462,8 @@ class ArtistAnalyzer(Analyzer):
                 track_count=("duration_min", "size"),
                 total_minutes=("duration_min", "sum"),
             )
-            .sort_values("track_count", ascending=False)
+            # kind="stable" makes the documented artist_id tie-break real: groupby emits groups id-sorted, and the default quicksort would scramble equal counts.
+            .sort_values("track_count", ascending=False, kind="stable")
             .head(self.top_n)
             .reset_index(drop=True)
         )
@@ -489,8 +503,8 @@ class DurationAnalyzer(Analyzer):
     def __init__(self, bins: int = 20, *, title: str | None = None) -> None:
         if bins < 1:
             raise ValueError(f"bins must be a positive integer, got {bins}")
+        super().__init__(title=title)
         self.bins = bins
-        self._instance_title = title
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Bin track durations and report exact minutes per bin.
@@ -560,8 +574,8 @@ class TimelineAnalyzer(Analyzer):
     title = "Track Timeline"
 
     def __init__(self, freq: str = "M", *, title: str | None = None) -> None:
+        super().__init__(title=title)
         self.freq = freq
-        self._instance_title = title
 
     def coverage(self, df: pd.DataFrame) -> tuple[int, int]:
         """Count rows with a valid ``added_at`` timestamp."""
@@ -650,6 +664,7 @@ class PlaylistAnalyzer:
 
         ``primary_artist_*`` columns come from the lead artist; ``tags`` and ``genres`` are the union (order-preserving dedup) across **all** artists on the track,
         so a featured artist's metadata isn't discarded. Local files (``is_local=True``) yield empty ``tags``/``genres`` and ``None`` for artist IDs.
+        ``release_year`` is ``None`` for unparseable or implausible (outside 1900-2100) release dates, matching ``YearAnalyzer``'s plausibility window.
 
         Args:
             playlist: Source Playlist with full Track + Artist data.
@@ -662,7 +677,8 @@ class PlaylistAnalyzer:
         for t in playlist.tracks:
             primary = t.primary_artist
             release_date = t.release_date
-            release_year: int | None = int(release_date[:4]) if release_date and release_date[:4].isdigit() else None
+            parsed_year: int | None = int(release_date[:4]) if release_date and release_date[:4].isdigit() else None
+            release_year = parsed_year if parsed_year is not None and _MIN_PLAUSIBLE_RELEASE_YEAR <= parsed_year <= _MAX_PLAUSIBLE_RELEASE_YEAR else None
             # Union all artists' tags/genres per track (order-preserving dedup). A featured artist's tags shouldn't be discarded just because they're not the lead.
             track_tags = list(dict.fromkeys(tag for a in t.artists for tag in a.tags))
             track_genres = list(dict.fromkeys(g for a in t.artists for g in a.genres))
@@ -700,8 +716,10 @@ class PlaylistAnalyzer:
         out: dict[str, pd.DataFrame] = {}
         for a in self.analyzers:
             if a.skip_message is not None:
-                n_data, _ = a.coverage(self.df)
-                if n_data == 0:
+                n_data, n_total = a.coverage(self.df)
+                # n_total > 0: an entirely empty DataFrame means "empty playlist", not "data source absent" — the skip_message hint (e.g. "set LASTFM_API_KEY")
+                # would mislead there, so the analyzer runs and renders its own empty-state placeholder instead.
+                if n_data == 0 and n_total > 0:
                     logger.info("Skipping %s: %s", a.effective_title, a.skip_message)
                     continue
             out[a.effective_title] = a.analyze(self.df)
