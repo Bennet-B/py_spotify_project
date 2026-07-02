@@ -5,7 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spotify-project"
 version = "0.1.0"
-requires-python = ">=3.11"
+# Matches what the toolchain actually enforces (ruff py314, pyright 3.14, the .venv interpreter).
+# A lower floor would be a claim nothing verifies — ruff's UP rules at py314 would actively erode it.
+requires-python = ">=3.14"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -15,10 +17,8 @@ line-length = 188
 target-version = "py314"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "C4", "RUF"]
 ignore = ["E501"]
-
-[tool.ruff.format]
 
 [tool.pyright]
 include = ["src", "tests"]

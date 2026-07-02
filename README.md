@@ -37,7 +37,7 @@ Spotify cut significant functionality from the Web API across 2024–2026. The c
 ### How that shaped the code
 
 - **Caching is load-bearing.** Each artist costs a real round-trip, so `FileCache` keeps artist responses for 365 days. Cached entries cover an entire year of notebook runs from a single fetch.
-- **Rate limits dictate pacing.** The client paces artist fetches at ~4 req/s and prints progress via `tqdm`; a fresh ~2 000-artist library takes ~7 minutes and must be run over several sessions to allow the cache to fill.
+- **Rate limits dictate pacing.** The client paces artist fetches at ~4 req/s and prints progress via `tqdm`; a fresh ~2 000-artist library takes ~8 minutes on the first run — after that, the year-long artist cache makes re-runs near-instant.
 - **Genres come from Last.fm.** Since Spotify's `artist.genres` field is empty, we enrich via Last.fm's `artist.getTopTags`. Raw tags surface in a `Top Tags` panel; a curated whitelist (`genre_taxonomy.py`) filters them into a `Top Genres` panel. The project runs without a Last.fm key — those two panels are simply skipped with an INFO log line.
 - **No dead code for deprecated endpoints.** `get_audio_features`, `recommendations`, `related_artists`, and similar are not in `src/` at all. We don't ship code we can't test.
 
@@ -51,7 +51,7 @@ That gives us: release-year & decade distribution, top artists (count and minute
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.14+ (matches what the toolchain enforces — see `requires-python` in `pyproject.toml`)
 - A Spotify developer app — register at <https://developer.spotify.com/dashboard>
 - *(Optional - but highly recommended)* a Last.fm API key for genre / tag enrichment — register at <https://www.last.fm/api/account/create>
 
@@ -87,7 +87,7 @@ Then edit `.env` and fill in:
 jupyter notebook notebooks/01_explore_playlist.ipynb
 ```
 
-- First run opens a browser for OAuth; subsequent runs read the cached token from `.cache/spotify_token`.
+- First run opens a browser for OAuth; subsequent runs read the cached token from `.cache/spotify_token` at the repo root (anchored there regardless of the working directory, like the API cache).
 - To analyze a different playlist, replace `PLAYLIST_ID` in the fetch cell. Use `"__liked__"` for your Liked Songs.
 
 ### Quality checks
@@ -112,4 +112,4 @@ See `pyproject.toml` for tooling configuration.
 - `src/spotify_project/genre_taxonomy.py` — `GENRE_WHITELIST` + `filter_to_genres`
 - `src/spotify_project/logging_setup.py` — auth-header redaction filter + `tqdm`-compatible log handler
 - `notebooks/01_explore_playlist.ipynb` — demo notebook
-- `tests/` — pytest unit tests (one per module)
+- `tests/` — pytest unit tests (roughly one file per module; `analyzer.py` is covered by both `test_analyzer.py` and `test_playlist_analyzer.py`)
