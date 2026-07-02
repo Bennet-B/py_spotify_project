@@ -342,6 +342,54 @@ class TestInit:
         assert client.genre_enricher is None
 
 
+class TestMalformedItems:
+    """Tests for robustness against null slots and non-track items flowing through the public fetch methods."""
+
+    def test_fetch_playlist_drops_episode_and_null_items(self, tmp_path: Path) -> None:
+        """fetch_playlist keeps only audio tracks: podcast episodes and null item slots are dropped."""
+        cache = FileCache(root=tmp_path)
+        fake_sp = MagicMock()
+        episode_item: dict[str, Any] = {
+            "item": {"id": "e1", "name": "Some Podcast", "type": "episode", "duration_ms": 1_800_000},
+            "added_at": "2024-06-01T00:00:00Z",
+            "is_local": False,
+        }
+        null_item: dict[str, Any] = {"item": None, "added_at": "2024-06-01T00:00:00Z", "is_local": False}
+        fake_sp.playlist.return_value = {
+            "id": "pl1",
+            "name": "Mixed PL",
+            "owner": {"display_name": "Bennet"},
+            "public": True,
+            "collaborative": False,
+            "description": "",
+            "items": {"items": [_track_item(0), episode_item, null_item], "next": None},
+        }
+        fake_sp.artist.return_value = {"id": "a1", "name": "Artist 1"}
+
+        client = SpotifyClient(sp=fake_sp, cache=cache)
+        playlist = client.fetch_playlist("pl1")
+
+        assert len(playlist.tracks) == 1
+        assert playlist.tracks[0].id == "t0"
+
+    def test_fetch_liked_songs_drops_null_tracks(self, tmp_path: Path) -> None:
+        """fetch_liked_songs drops saved-track slots whose 'track' payload is null (deleted/region-blocked tracks)."""
+        cache = FileCache(root=tmp_path)
+        fake_sp = MagicMock()
+        fake_sp.current_user.return_value = {"id": "me", "display_name": "Bennet"}
+        fake_sp.current_user_saved_tracks.return_value = {
+            "items": [_saved_track_item(0), {"track": None, "added_at": "2024-06-01T00:00:00Z"}],
+            "next": None,
+        }
+        fake_sp.artist.return_value = {"id": "a1", "name": "Artist 1"}
+
+        client = SpotifyClient(sp=fake_sp, cache=cache)
+        playlist = client.fetch_liked_songs()
+
+        assert len(playlist.tracks) == 1
+        assert playlist.tracks[0].id == "st0"
+
+
 class TestRateLimitHandling:
     """Tests for SpotifyClient._call's 429 backoff and bail-out behavior."""
 

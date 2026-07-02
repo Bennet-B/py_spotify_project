@@ -96,16 +96,18 @@ class Track:
         """Parse a playlist-item dict into a Track.
 
         Args:
-            item: A spotipy playlist-item dict (with keys ``track``, ``added_at``, ``is_local``).
+            item: A playlist-item dict with keys ``item`` (the track payload), ``added_at``, and ``is_local``.
+                This is the post-Feb-2026 playlist schema; ``SpotifyClient.fetch_liked_songs`` normalizes the saved-tracks ``track`` key to ``item`` before calling this.
             artist_by_id: Lookup of fully-fetched Artist objects, populated by ``SpotifyClient.fetch_playlist``.
 
         Returns:
-            The constructed Track. Tracks whose ``item.type`` is not ``"track"`` (e.g. podcast episodes) should be filtered out by the caller before this is called.
+            The constructed Track. Items whose payload ``type`` is not ``"track"`` (e.g. podcast episodes) should be filtered out by the caller before this is called.
         """
         track_data = item["item"]
         is_local = item.get("is_local", False)
         resolved: list[Artist] = []
-        for a in track_data.get("artists", []):
+        artists_raw: list[dict[str, Any]] = track_data.get("artists") or []
+        for a in artists_raw:
             aid = a.get("id")
             if not aid:
                 continue
@@ -120,13 +122,17 @@ class Track:
                 added_at = datetime.fromisoformat(added_at_raw)
             except ValueError:
                 logger.warning("Unparseable added_at %r for track %s", added_at_raw, track_data.get("id", "<unknown>"))
+        # Spotify populates very old library entries with the epoch timestamp; one such track would stretch every timeline plot back to 1970.
+        if added_at is not None and added_at.timestamp() == 0:
+            added_at = None
+        album: dict[str, Any] = track_data.get("album") or {}
         return cls(
             id=track_data.get("id"),
             name=track_data.get("name", ""),
             artists=tuple(resolved),
-            album_name=track_data.get("album", {}).get("name", ""),
-            release_date=track_data.get("album", {}).get("release_date"),
-            duration_ms=int(track_data.get("duration_ms", 0)),
+            album_name=album.get("name", ""),
+            release_date=album.get("release_date"),
+            duration_ms=int(track_data.get("duration_ms") or 0),
             explicit=bool(track_data.get("explicit", False)),
             added_at=added_at,
             is_local=is_local,
