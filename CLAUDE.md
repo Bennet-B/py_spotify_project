@@ -6,9 +6,9 @@ A Spotify analytics + playlist tool. Originally built as the **INFPROG2 FS26 sem
 
 Phase 1 (done, course scope): A Jupyter notebook that authenticates as a Spotify user and analyzes their playlists — genres, release-year distribution, top artists, duration, "added at" timeline, cross-playlist comparison.
 
-Phase 1.5 (current): richer notebook analytics — temporal analysis (library growth, artist discovery waves, seasonal trends), distribution views (KDE, ECDF, violin/box), release-year vs added-year, network visualizations (artist co-occurrence, genre similarity), first interactive Plotly charts.
+Phase 1.5 (done): richer notebook analytics — temporal analysis (library growth, artist discovery waves, seasonal trends), distribution views (KDE, ECDF, violin/box), release-year vs added-year, network visualizations (artist collaborations, genre similarity), first interactive Plotly charts. Computations live in `src/spotify_project/insights.py`; rendering stays in the notebook.
 
-Phase 2 (next, planned jointly): A small web UI to do the same analyses interactively, plus mutations — create / split / merge / re-sort / dedupe / re-tag playlists. A "playlist organizer" tool: split a source playlist / liked songs into genre- or vibe-matching buckets.
+Phase 2 (current, planned jointly): A small web UI to do the same analyses interactively, plus mutations — create / split / merge / re-sort / dedupe / re-tag playlists. A "playlist organizer" tool: split a source playlist / liked songs into genre- or vibe-matching buckets. **Framework and scope are decided together with the user in a dedicated planning session (Claude presents options, user decides) — no Phase 2 code before that decision.**
 
 ## Course requirements (satisfied — kept because they explain the code's shape)
 
@@ -32,6 +32,7 @@ Deliverables: Git repo with `src/`, `notebooks/`, `tests/`, README. Final presen
 - `python-dotenv` — load credentials from `.env`
 - `tqdm` — progress bar during Last.fm artist enrichment (~7 min for a fresh ~2 000-artist library)
 - `pyarrow` — pandas Arrow-backed dtype support (transitive but pinned)
+- `plotly` + `networkx` + `scipy` — notebook-side visualization (Phase 1.5): interactive charts, graph layouts, seaborn's KDE backend
 - `pytest` — tests
 - `jupyter` / `ipykernel` — for the notebook
 - (Phase 2) `streamlit` or `fastapi` + minimal HTML — TBD
@@ -95,9 +96,10 @@ py_spotify_project/
 │   └── spotify_project/
 │       ├── __init__.py
 │       ├── analyzer.py        # Analyzer (ABC) + 6 subclasses + PlaylistAnalyzer orchestrator
-│       ├── cache.py           # FileCache — file-based JSON cache with TTL
+│       ├── cache.py           # FileCache — file-based JSON cache with TTL, atomic writes
 │       ├── client.py          # SpotifyClient — auth, fetch, retry, pagination
 │       ├── genre_taxonomy.py  # GENRE_WHITELIST + filter_to_genres
+│       ├── insights.py        # pure plot-ready computations behind notebook sections 7-11
 │       ├── lastfm_client.py   # LastFmClient — optional Last.fm tag enrichment
 │       ├── logging_setup.py   # RedactAuthFilter + TqdmLoggingHandler
 │       └── models.py          # @dataclass Track, Playlist, Artist, User, PlaylistSummary
@@ -107,6 +109,7 @@ py_spotify_project/
     ├── test_analyzer.py
     ├── test_cache.py
     ├── test_client.py            # mocked spotipy
+    ├── test_insights.py
     ├── test_genre_taxonomy.py
     ├── test_lastfm_client.py
     ├── test_logging_setup.py
@@ -144,3 +147,5 @@ The entire `docs/` directory is **gitignored** — these are local working notes
 - 2026-05-12: Last.fm tag enrichment implemented on `feature/lastfm-tag-enrichment` branch. `Artist` redesigned (raw `tags` + derived `genres` property); `LastFmClient` added (FileCache-backed, 365-day TTL); `SpotifyClient` gained optional `genre_enricher`; `TagAnalyzer` added; `PlaylistAnalyzer.run_all/plot_all` skip Tag/Genre panels when LASTFM_API_KEY is unset. See implementation plan (archived at `docs/superpowers/archive/plans/2026-05-12-lastfm-tag-enrichment.md`).
 - 2026-05-13: Last.fm enrichment merged to `main` via PR #1. Test suite restructured around per-module files (`test_playlist_analyzer.py` split out from `test_analyzer.py`; added `test_logging_setup.py`, `test_genre_taxonomy.py`, `test_cache.py`, `test_lastfm_client.py`). `.gitignore` cleaned up — `docs/` is now explicitly local-only. Phase 1 implementation effectively complete; remaining work is documentation polish, README slim-down, and final presentation prep.
 - 2026-07-02: Course submitted and graded-state frozen at tag `v1.0-prog2`. Project continues as a personal tool. Post-course cleanup pass (`chore/post-course-cleanup`): full codebase review, superseded planning docs moved to `docs/superpowers/archive/`, CLAUDE.md re-scoped. Next: notebook visualization upgrade (Phase 1.5), then a joint planning session for the Phase 2 web UI (framework + scope decided together with the user).
+- 2026-07-03: Cleanup merged (PR #2 — incl. review fixes: empty-tags cache semantics pinned by test, release-year plausibility floor relaxed to 1860). Phase 1.5 notebook viz upgrade merged (PR #4; PR #3 was auto-closed by GitHub when its stacked base branch was deleted — same content). `insights.py` + tests added; notebook sections 7-11 executed and verified against the live library. 142 tests green.
+- 2026-07-04: User has minor caveats about some of the new plots — to be collected and addressed in a later notebook pass (not blocking). Next session: Phase 2 web UI planning (options presented, decided jointly).
