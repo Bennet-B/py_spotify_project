@@ -24,7 +24,8 @@ _LOW_COVERAGE_THRESHOLD = 0.7
 
 # Plausibility window for release years. Spotify metadata occasionally carries junk like "0000",
 # which would otherwise count as valid coverage and stretch the year axis across two millennia.
-_MIN_PLAUSIBLE_RELEASE_YEAR = 1900
+# Floor is the phonograph era — recorded music cannot predate it, so no legitimate release date can trip the filter.
+_MIN_PLAUSIBLE_RELEASE_YEAR = 1860
 _MAX_PLAUSIBLE_RELEASE_YEAR = 2100
 
 # A color accepted by Matplotlib: either a CSS hex/name string or an RGB float-triple (0.0-1.0 per channel) as returned by seaborn palettes.
@@ -327,7 +328,7 @@ class YearAnalyzer(Analyzer):
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """Count tracks per release year (or per year-bucket).
 
-        Rows with ``None``, unparseable, or implausible (outside 1900-2100) release_date values are dropped.
+        Rows with ``None``, unparseable, or implausible (outside 1860-2100) release_date values are dropped.
         When ``bucket_size > 1``, years are floor-divided onto bucket boundaries before counting.
 
         Args:
@@ -664,7 +665,7 @@ class PlaylistAnalyzer:
 
         ``primary_artist_*`` columns come from the lead artist; ``tags`` and ``genres`` are the union (order-preserving dedup) across **all** artists on the track,
         so a featured artist's metadata isn't discarded. Local files (``is_local=True``) yield empty ``tags``/``genres`` and ``None`` for artist IDs.
-        ``release_year`` is ``None`` for unparseable or implausible (outside 1900-2100) release dates, matching ``YearAnalyzer``'s plausibility window.
+        ``release_year`` is ``None`` for unparseable or implausible (outside 1860-2100) release dates, matching ``YearAnalyzer``'s plausibility window.
 
         Args:
             playlist: Source Playlist with full Track + Artist data.
