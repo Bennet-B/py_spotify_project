@@ -149,6 +149,18 @@ class TestCaching:
         assert second == ("funk",)
         assert mocked_after.call_count == 0  # served from cache, no re-fetch
 
+    def test_cached_empty_tags_served_without_refetch(self, cache: FileCache) -> None:
+        """A cached empty tag list is a valid negative result (untagged / unknown artist) — served as (), never treated as malformed, no refetch.
+
+        Pins the boundary of the malformed-entry guard: refetch applies only to a missing 'tags' key or a non-list value, not to an empty list.
+        """
+        client = LastFmClient(api_key="test-key", cache=cache)
+        cache.put("lastfm_artist/x", {"tags": []})
+        with patch("spotify_project.lastfm_client.urlopen") as mocked:
+            tags = client.fetch_artist_tags("x", "Untagged Artist")
+        assert tags == ()
+        mocked.assert_not_called()
+
     def test_caches_results(self, cache: FileCache) -> None:
         """A second call for the same artist is served from cache (no second HTTP call)."""
         client = LastFmClient(api_key="test-key", cache=cache)

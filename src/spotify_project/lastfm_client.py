@@ -107,8 +107,9 @@ class LastFmClient:
         if cached is not None:
             cached_tags = cached.get("tags")
             if isinstance(cached_tags, list):
+                # An empty list is a VALID negative result (artist unknown to Last.fm, or simply untagged) and is served from cache like any other value.
                 return self._normalize_and_dedupe(cast(list[str], cached_tags))
-            # Self-healing like FileCache's corrupt-entry recovery: an entry without a usable tags list falls through to a refetch that overwrites it.
+            # Only a malformed entry — "tags" key missing or holding a non-list — falls through to a refetch that overwrites it (self-healing, like FileCache's corrupt-entry recovery).
             logger.warning("Cache entry for artist %s (id=%s) has no usable 'tags' list; refetching", artist_name, spotify_artist_id)
 
         for attempt in range(2):
