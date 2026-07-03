@@ -7,6 +7,7 @@ import re
 import time
 import urllib.parse
 from typing import Any, ClassVar, cast
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .cache import FileCache
@@ -32,7 +33,8 @@ class LastFmClient:
     """
 
     BASE_URL: ClassVar[str] = "https://ws.audioscrobbler.com/2.0/"
-    RATE_LIMIT_DELAY_SECONDS: ClassVar[float] = 0.2
+    # Sleep before the single retry after a rate-limit response. There is no inter-request throttle in this class — per-artist caching makes an aborted run resumable, which caps the damage.
+    RATE_LIMIT_RETRY_BACKOFF_SECONDS: ClassVar[float] = 1.0
     CACHE_TTL_DAYS: ClassVar[float] = 365.0
     REQUEST_TIMEOUT_SECONDS: ClassVar[float] = 10.0
 
@@ -98,12 +100,17 @@ class LastFmClient:
             Tuple of canonical, unique tags in descending-weight order. Empty tuple when Last.fm has no tags for the artist or the artist is unknown.
 
         Raises:
-            RuntimeError: On persistent rate-limit (code 29 twice) or any non-"not found" Last.fm error.
+            RuntimeError: On persistent rate-limit (code 29 twice), any non-"not found" Last.fm error, a network/transport failure, or a non-JSON response body.
         """
         cache_key = f"lastfm_artist/{spotify_artist_id}"
         cached = None if force_refresh else self.cache.get(cache_key, ttl_days=self.CACHE_TTL_DAYS)
         if cached is not None:
-            return self._normalize_and_dedupe(cast(list[str], cached["tags"]))
+            cached_tags = cached.get("tags")
+            if isinstance(cached_tags, list):
+                # An empty list is a VALID negative result (artist unknown to Last.fm, or simply untagged) and is served from cache like any other value.
+                return self._normalize_and_dedupe(cast(list[str], cached_tags))
+            # Only a malformed entry — "tags" key missing or holding a non-list — falls through to a refetch that overwrites it (self-healing, like FileCache's corrupt-entry recovery).
+            logger.warning("Cache entry for artist %s (id=%s) has no usable 'tags' list; refetching", artist_name, spotify_artist_id)
 
         for attempt in range(2):
             data = self._call_get_top_tags(artist_name)
@@ -119,24 +126,31 @@ class LastFmClient:
                 return ()
             if error_code == 29:
                 if attempt == 0:
-                    logger.warning("Last.fm rate limit hit; sleeping %.1fs and retrying", self.RATE_LIMIT_DELAY_SECONDS * 5)
-                    time.sleep(self.RATE_LIMIT_DELAY_SECONDS * 5)
+                    logger.warning("Last.fm rate limit hit; sleeping %.1fs and retrying", self.RATE_LIMIT_RETRY_BACKOFF_SECONDS)
+                    time.sleep(self.RATE_LIMIT_RETRY_BACKOFF_SECONDS)
                     continue
                 break  # attempt 1 still rate-limited — fall to post-loop raise
             message = data.get("message", "<no message>")
             raise RuntimeError(f"Last.fm error {error_code} for artist {artist_name!r}: {message}")
         raise RuntimeError(
-            f"Last.fm rate-limit persisted after a {self.RATE_LIMIT_DELAY_SECONDS * 5:.1f}s retry for artist {artist_name!r}; aborting. Re-run the notebook after a short cooldown."
+            f"Last.fm rate-limit persisted after a {self.RATE_LIMIT_RETRY_BACKOFF_SECONDS:.1f}s retry for artist {artist_name!r}; aborting. Re-run the notebook after a short cooldown."
         )
 
     def _call_get_top_tags(self, artist_name: str) -> dict[str, Any]:
         """Make a single HTTP GET to the Last.fm artist.getTopTags endpoint.
 
+        Last.fm usually reports failures as HTTP 200 with an ``error`` code in the body, but some error codes arrive with a non-2xx status —
+        those ``HTTPError`` bodies are parsed through the same JSON path so the caller's error-code branches (not-found, rate-limit) still apply.
+
         Args:
             artist_name: Display name, URL-encoded into the query string.
 
         Returns:
-            The parsed JSON body. The caller must inspect the ``error`` key (Last.fm uses HTTP 200 + error code in body to report failures).
+            The parsed JSON body. The caller must inspect the ``error`` key.
+
+        Raises:
+            RuntimeError: On transport-level failures (DNS, connection reset, timeout) or a non-JSON response body.
+                The message points out that a re-run resumes from the per-artist cache, so a multi-hundred-artist enrichment doesn't restart from zero.
         """
         params = {
             "method": "artist.getTopTags",
@@ -147,9 +161,17 @@ class LastFmClient:
         }
         url = f"{self.BASE_URL}?{urllib.parse.urlencode(params)}"
         request = Request(url, headers={"User-Agent": "py_spotify_project/0.1"})
-        with urlopen(request, timeout=self.REQUEST_TIMEOUT_SECONDS) as response:
-            body = response.read()
-        return cast(dict[str, Any], json.loads(body))
+        try:
+            with urlopen(request, timeout=self.REQUEST_TIMEOUT_SECONDS) as response:
+                body = response.read()
+        except HTTPError as e:  # HTTPError before URLError — it's a subclass
+            body = e.read()
+        except (URLError, TimeoutError) as e:
+            raise RuntimeError(f"Network error calling Last.fm for artist {artist_name!r}: {e}. Re-run to resume — already-fetched artists are served from cache.") from e
+        try:
+            return cast(dict[str, Any], json.loads(body))
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Last.fm returned a non-JSON body for artist {artist_name!r}") from e
 
     def _extract_raw_tags(self, data: dict[str, Any]) -> list[str]:
         """Pull raw tag names from a Last.fm response body.
@@ -164,11 +186,16 @@ class LastFmClient:
         Returns:
             List of raw tag-name strings (whitespace stripped, empties dropped) in the order Last.fm returned them.
         """
-        toptags = cast(dict[str, Any], data.get("toptags", {}))
+        toptags_raw: Any = data.get("toptags", {})
+        if not isinstance(toptags_raw, dict):
+            return []
+        toptags = cast(dict[str, Any], toptags_raw)
         raw: Any = toptags.get("tag", [])
         if isinstance(raw, dict):
             raw = [raw]
-        items = cast(list[dict[str, Any]], raw)
+        if not isinstance(raw, list):
+            return []
+        items = (cast(dict[str, Any], item) for item in cast(list[Any], raw) if isinstance(item, dict))
         stripped = (str(item.get("name", "")).strip() for item in items)
         return [name for name in stripped if name]
 

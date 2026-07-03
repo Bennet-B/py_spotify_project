@@ -22,9 +22,10 @@ venv/
 
 # Notebooks
 .ipynb_checkpoints/
+*.nbconvert.ipynb
 
-# Generated data
-data/
+# Generated data (parquet exports of personal listening data — cell 16 of the notebook writes here)
+exports/
 
 # Docs
 docs/

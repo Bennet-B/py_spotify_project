@@ -1,14 +1,16 @@
 # py_spotify_project
 
-A Spotify analytics + playlist tool, built as the **INFPROG2 FS26 semester project** at ZHAW (alternative to weekly Praktika P01–P04, worth 20% / 20 pts of the final grade).
+A Spotify analytics + playlist tool. Originally built as the **INFPROG2 FS26 semester project** at ZHAW (submitted — frozen at tag `v1.0-prog2`); now continuing as a personal tool.
 
 ## Goal
 
-Phase 1 (current): A Jupyter notebook that authenticates as a Spotify user and analyzes their playlists — genres, release-year distribution, top artists, duration, "added at" timeline, cross-playlist comparison.
+Phase 1 (done, course scope): A Jupyter notebook that authenticates as a Spotify user and analyzes their playlists — genres, release-year distribution, top artists, duration, "added at" timeline, cross-playlist comparison.
 
-Phase 2 (later, maybe): A small web UI to do the same analyses interactively, plus mutations — create / split / merge / re-sort / dedupe / re-tag playlists. A "playlist organizer" tool.
+Phase 1.5 (current): richer notebook analytics — temporal analysis (library growth, artist discovery waves, seasonal trends), distribution views (KDE, ECDF, violin/box), release-year vs added-year, network visualizations (artist co-occurrence, genre similarity), first interactive Plotly charts.
 
-## Course requirements (must be visible in the codebase)
+Phase 2 (next, planned jointly): A small web UI to do the same analyses interactively, plus mutations — create / split / merge / re-sort / dedupe / re-tag playlists. A "playlist organizer" tool: split a source playlist / liked songs into genre- or vibe-matching buckets.
+
+## Course requirements (satisfied — kept because they explain the code's shape)
 
 | Criterion | Pts | How we satisfy it |
 | --- | --- | --- |
@@ -19,11 +21,11 @@ Phase 2 (later, maybe): A small web UI to do the same analyses interactively, pl
 | Code quality — ≥ 3 meaningful unit tests | 4 | `pytest` in `tests/` |
 | Presentation — both members can explain any line | 4 | Keep code small and explainable; avoid black-box AI dumps |
 
-Deliverables: Git repo with `src/`, `notebooks/`, `tests/`, README. Final presentation 5–10 min in the last lab session.
+Deliverables: Git repo with `src/`, `notebooks/`, `tests/`, README. Final presentation 5–10 min in the last lab session. The exact submitted state is tag `v1.0-prog2`.
 
 ## Tech stack
 
-- Python 3.11+ (per global style: type hints everywhere, `from __future__ import annotations`)
+- Python 3.14+ (`requires-python` matches what ruff/pyright/the venv actually enforce; per global style: type hints everywhere, `from __future__ import annotations`)
 - `.venv` per project (per global rule)
 - `spotipy` — Spotify Web API client, handles OAuth
 - `pandas` + `matplotlib` + `seaborn` — analysis + plots
@@ -87,8 +89,8 @@ py_spotify_project/
 │   ├── chat_histories/        # archived Claude session transcripts
 │   ├── week_10_infodump/      # course materials / lecture extracts
 │   └── superpowers/
-│       ├── plans/             # implementation plans (one per sprint)
-│       └── specs/             # design specs
+│       ├── specs/             # active design specs (Phase 1 design, Last.fm enrichment)
+│       └── archive/           # superseded sprint plans + specs (historical)
 ├── src/
 │   └── spotify_project/
 │       ├── __init__.py
@@ -122,15 +124,15 @@ py_spotify_project/
 
 ## Deferred decisions
 
-- **Phase 2 web UI framework:** Streamlit (very fast, pure Python, ~50 lines for a working UI) vs FastAPI + small HTML/JS frontend (more work, more "real-world" stack). User is open to trying both. Decide when Phase 1 is done.
+- **Phase 2 web UI — framework AND scope:** to be decided **jointly with the user** in a dedicated planning session (Claude presents options, user decides). Candidates: Streamlit (very fast, pure Python) vs FastAPI + small HTML/JS frontend (more work, more "real-world" stack). Scope questions: which analyses go interactive, how far the playlist organizer goes (given no audio features, "vibe" must derive from Last.fm tags + release year + artist data), and the dry-run/review UX before any playlist mutation.
 
 ## Reference materials in this repo
 
 The entire `docs/` directory is **gitignored** — these are local working notes that aren't shipped. A fresh clone won't have them.
 
-- `docs/superpowers/specs/2026-04-30-spotify-phase1-design.md` — **authoritative Phase 1 design spec** (start here)
-- `docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md` — Last.fm enrichment spec
-- `docs/superpowers/plans/` — one implementation plan per sprint, plus the Last.fm enrichment plan
+- `docs/superpowers/specs/2026-04-30-spotify-phase1-design.md` — Phase 1 design spec (implemented, historical)
+- `docs/superpowers/specs/2026-05-11-lastfm-genre-enrichment.md` — Last.fm enrichment spec (implemented, historical)
+- `docs/superpowers/archive/` — superseded sprint plans and specs from the course phase
 - `docs/chat_histories/` — archived Claude session transcripts from each sprint
 - `docs/INFPROG2 FS26 Semester Project Guide.txt` — official course brief
 - `docs/week_10_infodump/PROG2_SUMMARY.md` — condensed course summary; especially §5 (OOP), §7 (HTTP), §8 (validation), §9 (pandas), §15 (semester-project rubric)
@@ -139,5 +141,6 @@ The entire `docs/` directory is **gitignored** — these are local working notes
 ## Current status
 
 - 2026-04-30: Project initialized; Phase 1 design completed via superpowers brainstorming. Pivoted from Option A (SpotifyResource hierarchy) to Option B (Analyzer hierarchy) — better-defended OOP, real polymorphism. Dropped pydantic; added FileCache. Spec at `docs/superpowers/specs/2026-04-30-spotify-phase1-design.md`. Implementation begins after user approval.
-- 2026-05-12: Last.fm tag enrichment implemented on `feature/lastfm-tag-enrichment` branch. `Artist` redesigned (raw `tags` + derived `genres` property); `LastFmClient` added (FileCache-backed, 365-day TTL); `SpotifyClient` gained optional `genre_enricher`; `TagAnalyzer` added; `PlaylistAnalyzer.run_all/plot_all` skip Tag/Genre panels when LASTFM_API_KEY is unset. See [implementation plan](docs/superpowers/plans/2026-05-12-lastfm-tag-enrichment.md).
+- 2026-05-12: Last.fm tag enrichment implemented on `feature/lastfm-tag-enrichment` branch. `Artist` redesigned (raw `tags` + derived `genres` property); `LastFmClient` added (FileCache-backed, 365-day TTL); `SpotifyClient` gained optional `genre_enricher`; `TagAnalyzer` added; `PlaylistAnalyzer.run_all/plot_all` skip Tag/Genre panels when LASTFM_API_KEY is unset. See implementation plan (archived at `docs/superpowers/archive/plans/2026-05-12-lastfm-tag-enrichment.md`).
 - 2026-05-13: Last.fm enrichment merged to `main` via PR #1. Test suite restructured around per-module files (`test_playlist_analyzer.py` split out from `test_analyzer.py`; added `test_logging_setup.py`, `test_genre_taxonomy.py`, `test_cache.py`, `test_lastfm_client.py`). `.gitignore` cleaned up — `docs/` is now explicitly local-only. Phase 1 implementation effectively complete; remaining work is documentation polish, README slim-down, and final presentation prep.
+- 2026-07-02: Course submitted and graded-state frozen at tag `v1.0-prog2`. Project continues as a personal tool. Post-course cleanup pass (`chore/post-course-cleanup`): full codebase review, superseded planning docs moved to `docs/superpowers/archive/`, CLAUDE.md re-scoped. Next: notebook visualization upgrade (Phase 1.5), then a joint planning session for the Phase 2 web UI (framework + scope decided together with the user).

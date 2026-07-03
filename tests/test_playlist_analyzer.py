@@ -10,6 +10,7 @@ from matplotlib.figure import Figure
 
 from spotify_project.analyzer import (
     Analyzer,
+    GenreAnalyzer,
     PlaylistAnalyzer,
     TagAnalyzer,
     YearAnalyzer,
@@ -235,6 +236,16 @@ class TestRunAll:
         result = pa.run_all()
         assert "Unflagged" in result
 
+    def test_does_not_skip_on_empty_playlist(self) -> None:
+        """An entirely empty DataFrame means "empty playlist", not "data source absent" — skip-eligible analyzers still run.
+
+        Skipping would log the misleading "set LASTFM_API_KEY" hint when the actual cause is zero tracks.
+        """
+        pa = PlaylistAnalyzer(df=pd.DataFrame(), analyzers=[TagAnalyzer()])
+        result = pa.run_all()
+        assert "Top Tags" in result
+        assert result["Top Tags"].empty
+
 
 class TestPlotAll:
     """Tests for PlaylistAnalyzer.plot_all — subplot orchestration and skip behavior."""
@@ -296,3 +307,16 @@ class TestToParquet:
         assert reloaded.iloc[0]["track_id"] == "t1"
         assert list(reloaded.iloc[0]["artist_ids"]) == ["a1"]
         assert list(reloaded.iloc[0]["genres"]) == ["rock"]
+
+    def test_round_trip_preserves_tag_and_genre_coverage(self, tmp_path: Path) -> None:
+        """Tag/Genre coverage still detects data after a parquet round trip.
+
+        read_parquet materializes list columns as numpy arrays; coverage() used to isinstance-check for list and report zero, which made run_all skip both analyzers on a reloaded DataFrame.
+        """
+        df = pd.DataFrame([{"track_id": "t1", "tags": ["rock", "indie"], "genres": ["rock"]}])
+        pa = PlaylistAnalyzer(df=df, analyzers=[])
+        out = tmp_path / "roundtrip.parquet"
+        pa.to_parquet(out)
+        reloaded = pd.read_parquet(out)
+        assert TagAnalyzer().coverage(reloaded) == (1, 1)
+        assert GenreAnalyzer().coverage(reloaded) == (1, 1)

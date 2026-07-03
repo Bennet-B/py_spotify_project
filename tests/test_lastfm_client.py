@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -147,6 +149,18 @@ class TestCaching:
         assert second == ("funk",)
         assert mocked_after.call_count == 0  # served from cache, no re-fetch
 
+    def test_cached_empty_tags_served_without_refetch(self, cache: FileCache) -> None:
+        """A cached empty tag list is a valid negative result (untagged / unknown artist) — served as (), never treated as malformed, no refetch.
+
+        Pins the boundary of the malformed-entry guard: refetch applies only to a missing 'tags' key or a non-list value, not to an empty list.
+        """
+        client = LastFmClient(api_key="test-key", cache=cache)
+        cache.put("lastfm_artist/x", {"tags": []})
+        with patch("spotify_project.lastfm_client.urlopen") as mocked:
+            tags = client.fetch_artist_tags("x", "Untagged Artist")
+        assert tags == ()
+        mocked.assert_not_called()
+
     def test_caches_results(self, cache: FileCache) -> None:
         """A second call for the same artist is served from cache (no second HTTP call)."""
         client = LastFmClient(api_key="test-key", cache=cache)
@@ -255,7 +269,7 @@ class TestRateLimitHandling:
             tags = client.fetch_artist_tags("x", "X")
         assert tags == ("rock",)
         assert mock_sleep.call_count == 1
-        assert mock_sleep.call_args[0][0] == pytest.approx(LastFmClient.RATE_LIMIT_DELAY_SECONDS * 5)  # pyright: ignore[reportUnknownMemberType]
+        assert mock_sleep.call_args[0][0] == pytest.approx(LastFmClient.RATE_LIMIT_RETRY_BACKOFF_SECONDS)  # pyright: ignore[reportUnknownMemberType]
 
     def test_raises_when_rate_limit_persists(self, cache: FileCache) -> None:
         """Two consecutive rate-limit responses bail out with RuntimeError after a single retry."""
@@ -268,11 +282,52 @@ class TestRateLimitHandling:
         with (
             patch("spotify_project.lastfm_client.urlopen", side_effect=side_effects),
             patch("spotify_project.lastfm_client.time.sleep") as mock_sleep,
-            pytest.raises(RuntimeError, match="rate.?limit persisted"),
+            pytest.raises(RuntimeError, match=r"rate.?limit persisted"),
         ):
             client.fetch_artist_tags("x", "X")
         assert mock_sleep.call_count == 1
-        assert mock_sleep.call_args[0][0] == pytest.approx(LastFmClient.RATE_LIMIT_DELAY_SECONDS * 5)  # pyright: ignore[reportUnknownMemberType]
+        assert mock_sleep.call_args[0][0] == pytest.approx(LastFmClient.RATE_LIMIT_RETRY_BACKOFF_SECONDS)  # pyright: ignore[reportUnknownMemberType]
+
+
+class TestTransportErrors:
+    """Tests for _call_get_top_tags's transport-level failure handling."""
+
+    def test_http_error_body_parsed_through_error_code_path(self, cache: FileCache) -> None:
+        """A non-2xx response with a JSON error body still reaches the graceful error-code branches (here: error 6 → empty tags, cached)."""
+        client = LastFmClient(api_key="test-key", cache=cache)
+        error_body = json.dumps({"error": 6, "message": "The artist you supplied could not be found"}).encode("utf-8")
+        http_error = HTTPError("https://ws.audioscrobbler.com/2.0/", 404, "Not Found", None, BytesIO(error_body))  # pyright: ignore[reportArgumentType]
+        with patch("spotify_project.lastfm_client.urlopen", side_effect=http_error):
+            tags = client.fetch_artist_tags("x", "ObscureArtist")
+        assert tags == ()
+        assert cache.get("lastfm_artist/x", ttl_days=365.0) == {"tags": []}
+
+    def test_url_error_raises_runtime_error_with_resume_hint(self, cache: FileCache) -> None:
+        """Transport failures (DNS, connection reset) surface as RuntimeError pointing out that a re-run resumes from cache."""
+        client = LastFmClient(api_key="test-key", cache=cache)
+        with patch("spotify_project.lastfm_client.urlopen", side_effect=URLError("dns failure")), pytest.raises(RuntimeError, match="Re-run to resume"):
+            client.fetch_artist_tags("x", "X")
+
+    def test_non_json_body_raises_runtime_error(self, cache: FileCache) -> None:
+        """A non-JSON response body (e.g. an HTML error page) raises RuntimeError instead of an opaque JSONDecodeError."""
+        client = LastFmClient(api_key="test-key", cache=cache)
+        mock_response = MagicMock()
+        mock_response.__enter__.return_value = mock_response
+        mock_response.__exit__.return_value = False
+        mock_response.read.return_value = b"<html>Service Unavailable</html>"
+        with patch("spotify_project.lastfm_client.urlopen", return_value=mock_response), pytest.raises(RuntimeError, match="non-JSON"):
+            client.fetch_artist_tags("x", "X")
+
+    def test_malformed_cache_entry_refetches(self, cache: FileCache) -> None:
+        """A cache entry without a usable 'tags' list falls through to a refetch that overwrites it (self-healing)."""
+        client = LastFmClient(api_key="test-key", cache=cache)
+        cache.put("lastfm_artist/x", {"weird": "shape"})
+        payload = {"toptags": {"tag": [{"name": "rock", "count": 100}]}}
+        with patch("spotify_project.lastfm_client.urlopen", return_value=_mock_urlopen_response(payload)) as mocked:
+            tags = client.fetch_artist_tags("x", "X")
+        assert mocked.call_count == 1
+        assert tags == ("rock",)
+        assert cache.get("lastfm_artist/x", ttl_days=365.0) == {"tags": ["rock"]}
 
 
 class TestFromEnv:

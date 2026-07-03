@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# pyright: reportUnknownMemberType=false
-# spotipy's core methods (next, playlist, artist, …) forward `**kwargs` and surface as Unknown; every call site already casts the return value to `dict[str, Any]`.
 import logging
 import os
 import time
@@ -50,7 +48,9 @@ class SpotifyClient:
         "SPOTIPY_REDIRECT_URI",
     )
 
-    DEFAULT_TOKEN_CACHE: ClassVar[str] = ".cache/spotify_token"
+    # Anchored to the repo root (like FileCache's default dir), not the CWD — a Jupyter kernel's CWD is the notebook's directory,
+    # which used to mint a second token at notebooks/.cache/spotify_token.
+    DEFAULT_TOKEN_CACHE: ClassVar[Path] = Path(__file__).resolve().parents[2] / ".cache" / "spotify_token"
 
     # Artist data rarely changes; long TTL avoids re-paying the per-artist API cost on every notebook re-run.
     # Spotify's Feb 2026 batch-artists deprecation made these calls expensive (one round-trip per artist), and a 3000-track library can easily reference 2000+ unique artists.
@@ -96,7 +96,7 @@ class SpotifyClient:
         if missing:
             raise RuntimeError(f"Missing required env var(s): {', '.join(missing)}. Copy .env.example to .env and fill them in, or set them with `setx` (Windows) / `export` (Unix).")
         scope_str = " ".join(scopes or cls.DEFAULT_SCOPES)
-        token_cache_path = Path(cls.DEFAULT_TOKEN_CACHE)
+        token_cache_path = cls.DEFAULT_TOKEN_CACHE
         token_cache_path.parent.mkdir(parents=True, exist_ok=True)
         oauth = SpotifyOAuth(
             client_id=os.environ["SPOTIPY_CLIENT_ID"],
@@ -127,7 +127,7 @@ class SpotifyClient:
             Whatever ``fn`` returned (typed ``Any`` because spotipy methods are untyped — the ``_sp_*`` wrappers cast back to the concrete shape).
 
         Raises:
-            RuntimeError: If Retry-After exceeds ``MAX_RATE_LIMIT_WAIT_SECONDS`` or if a second consecutive 429 still asks to wait longer than the threshold.
+            RuntimeError: If Retry-After exceeds ``MAX_RATE_LIMIT_WAIT_SECONDS``, or if a second consecutive 429 occurs (regardless of its Retry-After value).
             SpotifyException: For any non-429 API error, unchanged.
         """
         for attempt in range(2):
@@ -149,7 +149,7 @@ class SpotifyClient:
                     logger.warning("Spotify rate-limited; sleeping %ds and retrying once.", retry_after)
                     time.sleep(retry_after)
                     continue
-                raise RuntimeError(f"Spotify rate-limit persisted after a {retry_after}s retry; aborting.") from exc
+                raise RuntimeError(f"Spotify rate-limit persisted after a retry (second Retry-After: {retry_after}s); aborting.") from exc
         # Unreachable — the loop either returns, sleeps-and-continues, or raises. The bare raise placates pyright's exhaustiveness check.
         raise AssertionError("unreachable")
 
@@ -166,7 +166,7 @@ class SpotifyClient:
         Returns:
             Retry-After in seconds, or a sentinel above the threshold when unavailable.
         """
-        headers = cast(dict[str, Any] | None, exc.headers)
+        headers = cast(dict[str, Any] | None, exc.headers)  # pyright: ignore[reportUnknownMemberType]
         raw: Any = headers.get("Retry-After") if headers else None
         if raw is None:
             return SpotifyClient.MAX_RATE_LIMIT_WAIT_SECONDS + 1
@@ -195,16 +195,16 @@ class SpotifyClient:
         return cast(dict[str, Any], self._call(self.sp.current_user_playlists))
 
     def _sp_next(self, page: dict[str, Any]) -> dict[str, Any]:
-        return cast(dict[str, Any], self._call(self.sp.next, page))  # pyright: ignore[reportUnknownArgumentType]
+        return cast(dict[str, Any], self._call(self.sp.next, page))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
 
     def _sp_playlist(self, playlist_id: str) -> dict[str, Any]:
-        return cast(dict[str, Any], self._call(self.sp.playlist, playlist_id))  # pyright: ignore[reportUnknownArgumentType]
+        return cast(dict[str, Any], self._call(self.sp.playlist, playlist_id))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
 
     def _sp_current_user_saved_tracks(self, *, limit: int) -> dict[str, Any]:
-        return cast(dict[str, Any], self._call(self.sp.current_user_saved_tracks, limit=limit))  # pyright: ignore[reportUnknownArgumentType]
+        return cast(dict[str, Any], self._call(self.sp.current_user_saved_tracks, limit=limit))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
 
     def _sp_artist(self, artist_id: str) -> dict[str, Any]:
-        return cast(dict[str, Any], self._call(self.sp.artist, artist_id))  # pyright: ignore[reportUnknownArgumentType]
+        return cast(dict[str, Any], self._call(self.sp.artist, artist_id))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
 
     # endregion
 
@@ -213,6 +213,9 @@ class SpotifyClient:
 
         Returns:
             Parsed ``User`` with id, display_name, and email (None if scope not granted).
+
+        Raises:
+            RuntimeError: If the API returns a user payload without an ``id`` (stale or invalid token).
         """
         data = self._sp_current_user()
         if not data.get("id"):
@@ -245,9 +248,9 @@ class SpotifyClient:
             PlaylistSummary(
                 id=str(p.get("id") or ""),
                 name=str(p.get("name") or ""),
-                owner_name=str((p.get("owner") or {}).get("display_name") or ""),  # pyright: ignore[reportUnknownArgumentType]
+                owner_name=str((p.get("owner") or {}).get("display_name") or ""),  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
                 # Spotify renamed tracks → items in Feb 2026
-                track_count=int((p.get("items") or {}).get("total", 0)),  # pyright: ignore[reportUnknownArgumentType]
+                track_count=int((p.get("items") or {}).get("total", 0)),  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
                 public=bool(p.get("public", False)),
             )
             for p in raw
@@ -274,7 +277,7 @@ class SpotifyClient:
             logger.info("Fetching playlist %s from API", playlist_id)
             data = self._sp_playlist(playlist_id)
             if "items" not in data:
-                owner_name = data.get("owner", {}).get("display_name", "<unknown>")
+                owner_name = str((data.get("owner") or {}).get("display_name") or "<unknown>")  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
                 playlist_name = data.get("name", "<unknown>")
                 raise ValueError(f"Playlist {playlist_id} [Owner: {owner_name}, Name: {playlist_name}] returned no track details.")
             track_items: list[dict[str, Any]] = list(data["items"]["items"])
@@ -365,12 +368,12 @@ class SpotifyClient:
             force_refresh: Passed through to both ``fetch_artists()`` and ``LastFmClient.fetch_artist_tags()``.
 
         Returns:
-            List of fully-enriched Track objects (podcast episodes and local-file items dropped).
+            List of fully-enriched Track objects. Non-track items (podcast episodes, null slots) are dropped; local files pass through — they carry ``type: "track"`` and are flagged via ``Track.is_local``.
         """
         audio_tracks = [it for it in track_items if it.get("item") and it["item"].get("type") == "track"]
         dropped = len(track_items) - len(audio_tracks)
         if dropped > 0:
-            logger.info("Dropped %d non-track items (podcasts, local files, etc.)", dropped)
+            logger.info("Dropped %d non-track items (podcast episodes, null slots)", dropped)
         logger.info("Enriching %d tracks with artist data", len(audio_tracks))
         artist_ids: set[str] = set()
         for item in audio_tracks:
@@ -401,7 +404,7 @@ class SpotifyClient:
             force_refresh: Skip the cache and refetch from the API.
 
         Returns:
-            List of Artist objects with full genre data, sorted by id (the deduplication order — not the input order).
+            List of Artist objects with id and name; ``tags`` stays empty until Last.fm enrichment fills it in ``_enrich_with_artists``. Sorted by id (the deduplication order — not the input order).
         """
         ids = sorted(set(artist_ids))
         if not ids:

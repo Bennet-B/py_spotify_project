@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -42,23 +43,30 @@ class FileCache:
                 Long-lived data can opt into a longer TTL without requiring a separate cache instance.
 
         Returns:
-            The deserialized JSON, or ``None`` if missing / stale.
+            The deserialized JSON object, or ``None`` if missing / stale / corrupt (non-JSON or a non-object top level).
         """
         effective_ttl = ttl_days if ttl_days is not None else self.ttl_days
         path = self._path_for(key)
-        if not path.exists():
-            return None
-        age_seconds = time.time() - path.stat().st_mtime
-        if age_seconds > effective_ttl * 86_400:
-            return None
+        # stat() and read happen inside one try so a concurrent delete between the calls degrades to a miss instead of escaping as FileNotFoundError.
         try:
-            return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+            if time.time() - path.stat().st_mtime > effective_ttl * 86_400:
+                return None
+            loaded: Any = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Corrupted cache entry %s: %s; treating as miss", key, e)
             return None
+        if not isinstance(loaded, dict):
+            logger.warning("Cache entry %s is valid JSON but not an object (%s); treating as miss", key, type(loaded).__name__)
+            return None
+        return cast(dict[str, Any], loaded)
 
     def put(self, key: str, value: dict[str, Any]) -> None:
-        """Write ``value`` to disk under ``key``.
+        """Write ``value`` to disk under ``key``, atomically.
+
+        Writes to a sibling temp file and ``os.replace``s it into place, so a killed process or a concurrent reader never sees a truncated entry
+        (the multi-MB ``liked/me`` blob made mid-write kills a realistic case).
 
         Args:
             key: Cache key (filesystem-safe path fragment).
@@ -66,7 +74,9 @@ class FileCache:
         """
         path = self._path_for(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(value), encoding="utf-8")
+        tmp_path = path.with_name(path.name + ".tmp")
+        tmp_path.write_text(json.dumps(value), encoding="utf-8")
+        os.replace(tmp_path, path)
 
     def clear(self) -> None:
         """Remove every cached entry under ``root``.

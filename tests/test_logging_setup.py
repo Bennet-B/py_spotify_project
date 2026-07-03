@@ -1,10 +1,30 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 
 import pytest
 
-from spotify_project.logging_setup import RedactAuthFilter, configure_logging
+from spotify_project.logging_setup import RedactAuthFilter, TqdmLoggingHandler, configure_logging
+
+
+@pytest.fixture
+def restore_root_logger() -> Iterator[None]:
+    """Snapshot and restore process-wide logging state around configure_logging tests.
+
+    configure_logging mutates the root logger (level, handlers) and the spotify_project logger level; without restoration, later tests become order-dependent.
+    """
+    root = logging.getLogger()
+    saved_handlers = root.handlers[:]
+    saved_filters = root.filters[:]
+    saved_level = root.level
+    app_logger = logging.getLogger("spotify_project")
+    saved_app_level = app_logger.level
+    yield
+    root.handlers[:] = saved_handlers
+    root.filters[:] = saved_filters
+    root.setLevel(saved_level)
+    app_logger.setLevel(saved_app_level)
 
 
 def _make_record(msg: str) -> logging.LogRecord:
@@ -28,8 +48,13 @@ def _make_record(msg: str) -> logging.LogRecord:
         ("Authorization: Basic MTZjMDU3YWM1ZWQ4NGM3ZGI3MQ==", "MTZjMDU3"),
         # OAuth refresh token in a single-quoted dict body (how `requests` debug logs format them).
         ("Body: {'refresh_token': 'AQCDDZyoMcDmoyCACYueXoNRcmkP', 'grant_type': 'refresh_token'}", "AQCDDZyo"),
+        # Access token in a repr-style OAuth response dump — followed by `'`, not whitespace, so the Bearer pattern alone can't catch it.
+        ("Token: {'access_token': 'BQBwSecretAccessToken123', 'token_type': 'Bearer', 'expires_in': 3600}", "BQBwSecret"),
+        # Double-quoted (JSON-style) body — both token kinds.
+        ('Response: {"access_token": "BQBwSecretJson", "refresh_token": "AQCDSecretJson"}', "BQBwSecretJson"),
+        ('Response: {"refresh_token": "AQCDSecretJson2"}', "AQCDSecretJson2"),
     ],
-    ids=["bearer", "basic_auth", "refresh_token"],
+    ids=["bearer", "basic_auth", "refresh_token", "access_token_repr", "access_token_json", "refresh_token_json"],
 )
 def test_redact_filter_scrubs_secrets(raw_message: str, sensitive_fragment: str) -> None:
     """RedactAuthFilter removes the sensitive fragment from the message and substitutes the placeholder."""
@@ -62,14 +87,35 @@ def test_redact_filter_always_returns_true() -> None:
     assert RedactAuthFilter().filter(_make_record("Bearer secret")) is True
 
 
-def test_configure_logging_sets_split_levels() -> None:
+def test_configure_logging_sets_split_levels(restore_root_logger: None) -> None:
     configure_logging(app_level="DEBUG", third_party_level="ERROR")
     assert logging.getLogger("spotify_project").level == logging.DEBUG
     # third-party = root level
     assert logging.getLogger().level == logging.ERROR
 
 
-def test_configure_logging_attaches_redact_filter() -> None:
+def test_configure_logging_attaches_redact_filter_to_handler(restore_root_logger: None) -> None:
+    """The filter must sit on the handler: logger-level filters never see records propagated from child loggers."""
     configure_logging()
-    filters = logging.getLogger().filters
-    assert any(isinstance(f, RedactAuthFilter) for f in filters)
+    handlers = [h for h in logging.getLogger().handlers if isinstance(h, TqdmLoggingHandler)]
+    assert len(handlers) == 1
+    assert any(isinstance(f, RedactAuthFilter) for f in handlers[0].filters)
+
+
+def test_configure_logging_redacts_propagated_child_logger_records(restore_root_logger: None, capsys: pytest.CaptureFixture[str]) -> None:
+    """End-to-end: a credential logged through a third-party child logger reaches the output redacted.
+
+    This is the exact threat model the module docstring claims to defend against — it used to fail when the filter sat on the root logger.
+    """
+    configure_logging()
+    logging.getLogger("spotipy.client").warning("Authorization: Bearer secretTOKEN123")
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "secretTOKEN123" not in combined
+    assert "***REDACTED***" in combined
+
+
+def test_configure_logging_rejects_invalid_level(restore_root_logger: None) -> None:
+    """An unknown level name raises ValueError (setLevel's native string validation)."""
+    with pytest.raises(ValueError, match="Unknown level"):
+        configure_logging(app_level="NOT_A_LEVEL")

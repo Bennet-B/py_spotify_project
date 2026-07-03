@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
+import matplotlib.patches as mpatches
+import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from spotify_project.analyzer import (
@@ -97,10 +101,10 @@ class TestGenreAnalyzer:
         assert summary.attrs["coverage"] == (2, 4)
 
     def test_plot_draws_band_when_coverage_below_100(self) -> None:
-        """GenreAnalyzer.plot adds an axhspan-style patch when coverage < 100%.
+        """GenreAnalyzer.plot adds the missing-fraction band patch when coverage < 100%, in axes-fraction coordinates below the axes.
 
-        Coarse check: count the number of patches added to the Axes after drawing. With full coverage, only the bar patches are present.
-        With partial coverage, an additional patch (the missing-fraction band) appears.
+        Placement is asserted, not just patch count: the band must sit at y=-0.05 in ``ax.transAxes`` space.
+        (An earlier axhspan-based implementation silently dropped the transform and drew the band over the top bar in data space.)
         We use a playlist with enough genres that both full and partial have the same number of genres in the result, differing only in coverage.
         """
         df_full = pd.DataFrame(
@@ -118,17 +122,23 @@ class TestGenreAnalyzer:
             ]
         )
 
-        def _patch_count(d: pd.DataFrame) -> int:
+        def _draw(d: pd.DataFrame) -> tuple[Axes, int]:
             fig = Figure()
             ax = fig.subplots()
             analyzer = GenreAnalyzer()
             summary = analyzer.analyze(d)
             analyzer.plot(ax, summary)
-            return len(ax.patches)
+            return ax, len(ax.patches)
 
-        patches_full = _patch_count(df_full)
-        patches_partial = _patch_count(df_partial)
-        assert patches_partial > patches_full
+        _, patches_full = _draw(df_full)
+        ax_partial, patches_partial = _draw(df_partial)
+        assert patches_partial == patches_full + 1
+        band = ax_partial.patches[-1]
+        # get_transform() composes the patch's own transform on top of the assigned one, so identity fails; contains_branch asserts transAxes is in the chain.
+        assert band.get_transform().contains_branch(ax_partial.transAxes)
+        assert isinstance(band, mpatches.Rectangle)
+        assert band.get_y() == pytest.approx(-0.05)  # pyright: ignore[reportUnknownMemberType]
+        assert band.get_width() == pytest.approx(1 / 3)  # pyright: ignore[reportUnknownMemberType] — one of three tracks has no genres
 
 
 class TestYearAnalyzer:
@@ -174,6 +184,19 @@ class TestYearAnalyzer:
         assert counts[1970] == 2
         assert counts[1980] == 1
         assert counts[2020] == 2
+
+    def test_excludes_implausible_years(self) -> None:
+        """Junk release dates like Spotify's "0000" are dropped from both the summary and the coverage count."""
+        df = pd.DataFrame(
+            [
+                {"track_id": "1", "release_date": "2020-01-01"},
+                {"track_id": "2", "release_date": "0000"},
+                {"track_id": "3", "release_date": "9999-01-01"},
+            ]
+        )
+        summary = YearAnalyzer().analyze(df)
+        assert list(summary["year"]) == [2020]
+        assert summary.attrs["coverage"] == (1, 3)
 
     def test_rejects_non_positive_bucket_size(self) -> None:
         """YearAnalyzer's __init__ rejects bucket_size < 1."""
@@ -450,6 +473,14 @@ class TestTagAnalyzer:
     def test_coverage_counts_rows_with_any_tag(self) -> None:
         """TagAnalyzer.coverage counts rows with at least one tag against the total row count."""
         df = pd.DataFrame({"tags": [["rock"], [], ["pop", "indie"], []]})
+        n_data, n_total = TagAnalyzer().coverage(df)
+        assert n_data == 2
+        assert n_total == 4
+
+    def test_coverage_is_container_type_agnostic(self) -> None:
+        """coverage() must not depend on the exact container type: a parquet round-trip yields numpy arrays where the live pipeline yields lists."""
+        mixed_containers: list[Any] = [np.array(["rock"]), np.array([]), ("pop", "indie"), []]
+        df = pd.DataFrame({"tags": mixed_containers})
         n_data, n_total = TagAnalyzer().coverage(df)
         assert n_data == 2
         assert n_total == 4
