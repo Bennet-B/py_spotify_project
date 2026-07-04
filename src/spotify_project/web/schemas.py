@@ -130,6 +130,108 @@ class TracksResponse(BaseModel):
     tracks: list[TrackRow]
 
 
+class LabelCountRow(BaseModel):
+    """One bar of the tag/genre frequency chart."""
+
+    label: str
+    count: int
+
+
+class LabelsResponse(BaseModel):
+    """Response of ``GET .../insights/labels``; ``field`` echoes which label column was counted."""
+
+    field: Literal["genres", "tags"]
+    rows: list[LabelCountRow]
+
+
+class YearCountRow(BaseModel):
+    """One pre-binned bar of the release-year chart (clicks map to exact years)."""
+
+    year: int
+    count: int
+
+
+class YearsResponse(BaseModel):
+    """Response of ``GET .../insights/years``."""
+
+    rows: list[YearCountRow]
+
+
+class AdditionRow(BaseModel):
+    """One period of the library-growth chart."""
+
+    period: datetime
+    added: int
+    cumulative_tracks: int
+    cumulative_hours: float
+
+
+class AdditionsResponse(BaseModel):
+    """Response of ``GET .../insights/additions``."""
+
+    freq: str
+    rows: list[AdditionRow]
+
+
+class DiscoveryRow(BaseModel):
+    """One period of the artist-discovery-waves chart."""
+
+    period: datetime
+    new_artists: int
+
+
+class DiscoveryResponse(BaseModel):
+    """Response of ``GET .../insights/discovery``."""
+
+    freq: str
+    rows: list[DiscoveryRow]
+
+
+class SeasonalRow(BaseModel):
+    """One calendar month of the seasonal-profile chart (always 12 rows)."""
+
+    month: int
+    month_name: str
+    added: int
+
+
+class SeasonalResponse(BaseModel):
+    """Response of ``GET .../insights/seasonal``."""
+
+    rows: list[SeasonalRow]
+
+
+class ArtistCountRow(BaseModel):
+    """One bar of the (optionally genre-scoped) artist chart."""
+
+    artist_id: str
+    artist_name: str
+    track_count: int
+
+
+class ArtistsResponse(BaseModel):
+    """Response of ``GET .../insights/artists``; ``scoped_to_genres`` echoes the cascading genre filter."""
+
+    scoped_to_genres: list[str]
+    rows: list[ArtistCountRow]
+
+
+class ReleaseVsAddedRow(BaseModel):
+    """One dot of the release-vs-added scatter; ``track_id`` is None for local files (excluded from lasso selections)."""
+
+    track_id: str | None
+    release_year: int
+    added_year: int
+    track: str
+    artist: str
+
+
+class ReleaseVsAddedResponse(BaseModel):
+    """Response of ``GET .../insights/release-vs-added``."""
+
+    rows: list[ReleaseVsAddedRow]
+
+
 def track_rows_from_df(df: pd.DataFrame) -> list[TrackRow]:
     """Convert the flattened track DataFrame into wire-ready rows.
 

@@ -167,6 +167,396 @@
         }
       }
     },
+    "/api/playlists/{playlist_id}/insights/labels": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Labels",
+        "description": "Tag/genre frequency bars \u2014 the primary rule-helper chart (bar click \u2192 tag filter).",
+        "operationId": "labels_api_playlists__playlist_id__insights_labels_get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Playlist Id"
+            }
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "genres",
+                "tags"
+              ],
+              "type": "string",
+              "default": "genres",
+              "title": "Field"
+            }
+          },
+          {
+            "name": "top_n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 30,
+              "title": "Top N"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playlists/{playlist_id}/insights/years": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Years",
+        "description": "Tracks per release year, pre-binned server-side so a bar click/box-select maps to exact years.",
+        "operationId": "years_api_playlists__playlist_id__insights_years_get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Playlist Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YearsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playlists/{playlist_id}/insights/additions": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Additions",
+        "description": "Library growth: additions per period plus cumulative tracks/hours.",
+        "operationId": "additions_api_playlists__playlist_id__insights_additions_get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Playlist Id"
+            }
+          },
+          {
+            "name": "freq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "W",
+                "M",
+                "Q",
+                "Y"
+              ],
+              "type": "string",
+              "default": "M",
+              "title": "Freq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdditionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playlists/{playlist_id}/insights/discovery": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Discovery",
+        "description": "Artist discovery waves: how many artists enter the library for the first time per period.",
+        "operationId": "discovery_api_playlists__playlist_id__insights_discovery_get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Playlist Id"
+            }
+          },
+          {
+            "name": "freq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "W",
+                "M",
+                "Q",
+                "Y"
+              ],
+              "type": "string",
+              "default": "M",
+              "title": "Freq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playlists/{playlist_id}/insights/seasonal": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Seasonal",
+        "description": "Additions by calendar month aggregated across years (always 12 rows).",
+        "operationId": "seasonal_api_playlists__playlist_id__insights_seasonal_get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Playlist Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playlists/{playlist_id}/insights/artists": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Artists",
+        "description": "Track counts per credited artist; repeatable ``genre`` params implement the cascading genre\u2192artist re-scope.",
+        "operationId": "artists_api_playlists__playlist_id__insights_artists_get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Playlist Id"
+            }
+          },
+          {
+            "name": "genre",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genre"
+            }
+          },
+          {
+            "name": "top_n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 25,
+              "title": "Top N"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtistsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playlists/{playlist_id}/insights/release-vs-added": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Release Vs Added",
+        "description": "Release-year vs added-year scatter rows; carries track ids so a lasso selection can become a playlist.",
+        "operationId": "release_vs_added_api_playlists__playlist_id__insights_release_vs_added_get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Playlist Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseVsAddedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{job_id}": {
       "get": {
         "tags": [
@@ -213,6 +603,149 @@
   },
   "components": {
     "schemas": {
+      "AdditionRow": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Period"
+          },
+          "added": {
+            "type": "integer",
+            "title": "Added"
+          },
+          "cumulative_tracks": {
+            "type": "integer",
+            "title": "Cumulative Tracks"
+          },
+          "cumulative_hours": {
+            "type": "number",
+            "title": "Cumulative Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period",
+          "added",
+          "cumulative_tracks",
+          "cumulative_hours"
+        ],
+        "title": "AdditionRow",
+        "description": "One period of the library-growth chart."
+      },
+      "AdditionsResponse": {
+        "properties": {
+          "freq": {
+            "type": "string",
+            "title": "Freq"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AdditionRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "freq",
+          "rows"
+        ],
+        "title": "AdditionsResponse",
+        "description": "Response of ``GET .../insights/additions``."
+      },
+      "ArtistCountRow": {
+        "properties": {
+          "artist_id": {
+            "type": "string",
+            "title": "Artist Id"
+          },
+          "artist_name": {
+            "type": "string",
+            "title": "Artist Name"
+          },
+          "track_count": {
+            "type": "integer",
+            "title": "Track Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artist_id",
+          "artist_name",
+          "track_count"
+        ],
+        "title": "ArtistCountRow",
+        "description": "One bar of the (optionally genre-scoped) artist chart."
+      },
+      "ArtistsResponse": {
+        "properties": {
+          "scoped_to_genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scoped To Genres"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ArtistCountRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scoped_to_genres",
+          "rows"
+        ],
+        "title": "ArtistsResponse",
+        "description": "Response of ``GET .../insights/artists``; ``scoped_to_genres`` echoes the cascading genre filter."
+      },
+      "DiscoveryResponse": {
+        "properties": {
+          "freq": {
+            "type": "string",
+            "title": "Freq"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "freq",
+          "rows"
+        ],
+        "title": "DiscoveryResponse",
+        "description": "Response of ``GET .../insights/discovery``."
+      },
+      "DiscoveryRow": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Period"
+          },
+          "new_artists": {
+            "type": "integer",
+            "title": "New Artists"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period",
+          "new_artists"
+        ],
+        "title": "DiscoveryRow",
+        "description": "One period of the artist-discovery-waves chart."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -372,6 +905,51 @@
         "title": "JobStatus",
         "description": "Lifecycle states of a background job."
       },
+      "LabelCountRow": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "count"
+        ],
+        "title": "LabelCountRow",
+        "description": "One bar of the tag/genre frequency chart."
+      },
+      "LabelsResponse": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "genres",
+              "tags"
+            ],
+            "title": "Field"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LabelCountRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "rows"
+        ],
+        "title": "LabelsResponse",
+        "description": "Response of ``GET .../insights/labels``; ``field`` echoes which label column was counted."
+      },
       "MeResponse": {
         "properties": {
           "id": {
@@ -483,6 +1061,105 @@
         "type": "object",
         "title": "RefreshRequest",
         "description": "Body of ``POST /api/playlists/{id}/refresh``; ``force`` bypasses the response cache."
+      },
+      "ReleaseVsAddedResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseVsAddedRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "title": "ReleaseVsAddedResponse",
+        "description": "Response of ``GET .../insights/release-vs-added``."
+      },
+      "ReleaseVsAddedRow": {
+        "properties": {
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "release_year": {
+            "type": "integer",
+            "title": "Release Year"
+          },
+          "added_year": {
+            "type": "integer",
+            "title": "Added Year"
+          },
+          "track": {
+            "type": "string",
+            "title": "Track"
+          },
+          "artist": {
+            "type": "string",
+            "title": "Artist"
+          }
+        },
+        "type": "object",
+        "required": [
+          "track_id",
+          "release_year",
+          "added_year",
+          "track",
+          "artist"
+        ],
+        "title": "ReleaseVsAddedRow",
+        "description": "One dot of the release-vs-added scatter; ``track_id`` is None for local files (excluded from lasso selections)."
+      },
+      "SeasonalResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SeasonalRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "title": "SeasonalResponse",
+        "description": "Response of ``GET .../insights/seasonal``."
+      },
+      "SeasonalRow": {
+        "properties": {
+          "month": {
+            "type": "integer",
+            "title": "Month"
+          },
+          "month_name": {
+            "type": "string",
+            "title": "Month Name"
+          },
+          "added": {
+            "type": "integer",
+            "title": "Added"
+          }
+        },
+        "type": "object",
+        "required": [
+          "month",
+          "month_name",
+          "added"
+        ],
+        "title": "SeasonalRow",
+        "description": "One calendar month of the seasonal-profile chart (always 12 rows)."
       },
       "TrackRow": {
         "properties": {
@@ -670,6 +1347,42 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "YearCountRow": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "year",
+          "count"
+        ],
+        "title": "YearCountRow",
+        "description": "One pre-binned bar of the release-year chart (clicks map to exact years)."
+      },
+      "YearsResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/YearCountRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "title": "YearsResponse",
+        "description": "Response of ``GET .../insights/years``."
       }
     }
   }

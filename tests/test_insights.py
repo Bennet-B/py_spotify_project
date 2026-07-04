@@ -8,12 +8,15 @@ import pytest
 from spotify_project.insights import (
     additions_over_time,
     artist_first_seen,
+    artist_track_counts,
     collaboration_edges,
     discovery_waves,
     genre_cooccurrence,
     genre_share_over_time,
+    label_frequencies,
     release_vs_added,
     seasonal_profile,
+    year_counts,
 )
 
 
@@ -180,15 +183,88 @@ class TestReleaseVsAdded:
         df = _df(
             [
                 {
+                    "track_id": "t1",
                     "release_year": 1979,
                     "added_at": datetime(2024, 5, 1, tzinfo=UTC),
                     "name": "Old Song",
                     "primary_artist_name": "Alice",
                 },
-                {"release_year": None, "added_at": datetime(2024, 5, 1, tzinfo=UTC), "name": "No Year", "primary_artist_name": "Bob"},
+                {"track_id": "t2", "release_year": None, "added_at": datetime(2024, 5, 1, tzinfo=UTC), "name": "No Year", "primary_artist_name": "Bob"},
             ]
         )
         out = release_vs_added(df)
         assert len(out) == 1
         row = out.iloc[0]
-        assert (row["release_year"], row["added_year"], row["track"], row["artist"]) == (1979, 2024, "Old Song", "Alice")
+        assert (row["track_id"], row["release_year"], row["added_year"], row["track"], row["artist"]) == ("t1", 1979, 2024, "Old Song", "Alice")
+
+    def test_missing_track_id_column_returns_typed_empty(self) -> None:
+        """A frame without track_id (pre-M1 parquet export) degrades to the typed empty result instead of raising."""
+        df = _df([{"release_year": 1979, "added_at": datetime(2024, 5, 1, tzinfo=UTC), "name": "Old Song", "primary_artist_name": "Alice"}])
+        out = release_vs_added(df)
+        assert out.empty
+        assert list(out.columns) == ["track_id", "release_year", "added_year", "track", "artist"]
+
+
+class TestLabelFrequencies:
+    """Tests for label_frequencies — the tag/genre bar chart behind the rule builder."""
+
+    def test_counts_across_tracks_descending(self) -> None:
+        df = _df([{"genres": ["rock", "pop"]}, {"genres": ["rock"]}, {"genres": []}])
+        out = label_frequencies(df, field="genres", top_n=10)
+        assert list(zip(out["label"], out["count"], strict=True)) == [("rock", 2), ("pop", 1)]
+
+    def test_top_n_truncates(self) -> None:
+        df = _df([{"genres": ["a", "b", "c"]}, {"genres": ["a", "b"]}, {"genres": ["a"]}])
+        out = label_frequencies(df, top_n=2)
+        assert list(out["label"]) == ["a", "b"]
+
+    def test_tags_field_and_missing_column(self) -> None:
+        df = _df([{"tags": ["seen live", "rock"]}])
+        assert list(label_frequencies(df, field="tags")["label"]) == ["seen live", "rock"]
+        empty = label_frequencies(_df([{"name": "x"}]), field="genres")
+        assert empty.empty
+        assert list(empty.columns) == ["label", "count"]
+
+
+class TestYearCounts:
+    """Tests for year_counts — pre-binned release-year bars."""
+
+    def test_counts_ascending_years_skipping_nulls(self) -> None:
+        df = _df([{"release_year": 1999}, {"release_year": 2020}, {"release_year": 1999}, {"release_year": None}])
+        out = year_counts(df)
+        assert list(zip(out["year"], out["count"], strict=True)) == [(1999, 2), (2020, 1)]
+
+    def test_all_null_returns_typed_empty(self) -> None:
+        out = year_counts(_df([{"release_year": None}]))
+        assert out.empty
+        assert list(out.columns) == ["year", "count"]
+
+
+class TestArtistTrackCounts:
+    """Tests for artist_track_counts — the cascading genre-scoped artist chart."""
+
+    def _library(self) -> pd.DataFrame:
+        return _df(
+            [
+                {"artist_ids": ["a1"], "artist_names": ["Rocker"], "genres": ["rock"]},
+                {"artist_ids": ["a1", "a2"], "artist_names": ["Rocker", "Jazzer"], "genres": ["rock", "jazz"]},
+                {"artist_ids": ["a2"], "artist_names": ["Jazzer"], "genres": ["jazz"]},
+            ]
+        )
+
+    def test_counts_all_credited_artists(self) -> None:
+        out = artist_track_counts(self._library())
+        assert list(zip(out["artist_name"], out["track_count"], strict=True)) == [("Rocker", 2), ("Jazzer", 2)]
+
+    def test_genre_scope_filters_tracks_case_insensitively(self) -> None:
+        out = artist_track_counts(self._library(), genres=["ROCK"])
+        assert list(zip(out["artist_name"], out["track_count"], strict=True)) == [("Rocker", 2), ("Jazzer", 1)]
+
+    def test_unmatched_genre_returns_typed_empty(self) -> None:
+        out = artist_track_counts(self._library(), genres=["polka"])
+        assert out.empty
+        assert list(out.columns) == ["artist_id", "artist_name", "track_count"]
+
+    def test_none_artist_ids_are_skipped(self) -> None:
+        df = _df([{"artist_ids": [None], "artist_names": ["Local Hero"], "genres": []}])
+        assert artist_track_counts(df).empty
