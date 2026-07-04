@@ -96,7 +96,6 @@ def _run_apply(body: ApplyRequest, spec: organizer.OrganizerSpec, df: Any, clien
     if body.include_rest:
         targets.append((body.rest_name, assignment.rest))
 
-    user = client.fetch_current_user()
     description = f"created by spotify_project · batch {body.batch_name} · {datetime.now(UTC).date().isoformat()}"
     created: list[CreatedPlaylist] = []
     skipped_empty: list[str] = []
@@ -105,7 +104,7 @@ def _run_apply(body: ApplyRequest, spec: organizer.OrganizerSpec, df: Any, clien
         if not track_ids:
             skipped_empty.append(bucket_name)
             continue
-        playlist_id = client.create_playlist(user.id, f"[{body.batch_name}] {bucket_name}", public=body.public, description=description)
+        playlist_id = client.create_playlist(f"[{body.batch_name}] {bucket_name}", public=body.public, description=description)
         added = client.add_tracks(playlist_id, track_ids, on_progress=progress)
         created.append(CreatedPlaylist(bucket_name=bucket_name, playlist_id=playlist_id, url=f"https://open.spotify.com/playlist/{playlist_id}", added=added))
 

@@ -455,25 +455,26 @@ class TestRateLimitHandling:
 class TestMutations:
     """Tests for create_playlist and add_tracks — the organizer's Apply primitives."""
 
-    def test_create_playlist_returns_id(self, tmp_path: Path) -> None:
+    def test_create_playlist_uses_me_playlists_route(self, tmp_path: Path) -> None:
+        """Creation goes through POST me/playlists — the /users/{id}/playlists route (spotipy's user_playlist_create) 403s since Feb 2026."""
         cache = FileCache(root=tmp_path)
         fake_sp = MagicMock()
-        fake_sp.user_playlist_create.return_value = {"id": "new_pl", "name": "[Batch] Rock"}
+        fake_sp._post.return_value = {"id": "new_pl", "name": "[Batch] Rock"}
 
         client = SpotifyClient(sp=fake_sp, cache=cache)
-        playlist_id = client.create_playlist("u1", "[Batch] Rock", public=False, description="created by spotify_project")
+        playlist_id = client.create_playlist("[Batch] Rock", public=False, description="created by spotify_project")
 
         assert playlist_id == "new_pl"
-        fake_sp.user_playlist_create.assert_called_once_with("u1", "[Batch] Rock", public=False, description="created by spotify_project")
+        fake_sp._post.assert_called_once_with("me/playlists", payload={"name": "[Batch] Rock", "public": False, "description": "created by spotify_project"})
 
     def test_create_playlist_without_id_raises(self, tmp_path: Path) -> None:
         cache = FileCache(root=tmp_path)
         fake_sp = MagicMock()
-        fake_sp.user_playlist_create.return_value = {"error": "nope"}
+        fake_sp._post.return_value = {"error": "nope"}
 
         client = SpotifyClient(sp=fake_sp, cache=cache)
         with pytest.raises(RuntimeError, match="no id"):
-            client.create_playlist("u1", "X")
+            client.create_playlist("X")
 
     def test_add_tracks_chunks_at_100(self, tmp_path: Path) -> None:
         """250 ids arrive as calls of 100/100/50, in order, and report per-chunk progress."""

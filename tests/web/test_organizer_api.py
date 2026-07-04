@@ -85,9 +85,9 @@ class FakeMutationClient:
     def fetch_current_user(self) -> User:
         return User(id="u1", display_name="Bennet", email=None)
 
-    def create_playlist(self, user_id: str, name: str, *, public: bool = False, description: str = "") -> str:
+    def create_playlist(self, name: str, *, public: bool = False, description: str = "") -> str:
         self._counter += 1
-        self.calls.append(("create_playlist", {"user_id": user_id, "name": name, "public": public, "description": description}))
+        self.calls.append(("create_playlist", {"name": name, "public": public, "description": description}))
         return f"created_{self._counter}"
 
     def add_tracks(self, playlist_id: str, track_ids: Any, *, on_progress: ProgressFn | None = None) -> int:
