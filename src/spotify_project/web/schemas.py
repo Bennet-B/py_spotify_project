@@ -408,6 +408,109 @@ class BatchesResponse(BaseModel):
     batches: list[BatchOut]
 
 
+def from_core_spec(spec: organizer.OrganizerSpec) -> OrganizerSpecIn:
+    """Convert a core spec back into the boundary shape (used by suggest-split so the frontend can load the proposal into the organizer)."""
+
+    def to_rule_in(rule: organizer.Rule) -> TagRuleIn | YearRuleIn | DurationRuleIn | ArtistRuleIn | TrackRuleIn:
+        match rule:
+            case organizer.TagRule():
+                return TagRuleIn(labels=sorted(rule.labels), field=rule.field)
+            case organizer.YearRule():
+                return YearRuleIn(min_year=rule.min_year, max_year=rule.max_year)
+            case organizer.DurationRule():
+                return DurationRuleIn(min_seconds=rule.min_seconds, max_seconds=rule.max_seconds)
+            case organizer.ArtistRule():
+                return ArtistRuleIn(artist_ids=sorted(rule.artist_ids))
+            case organizer.TrackRule():
+                return TrackRuleIn(track_ids=sorted(rule.track_ids))
+
+    return OrganizerSpecIn(
+        buckets=[BucketSpecIn(name=bucket.name, rules=[to_rule_in(rule) for rule in bucket.rules]) for bucket in spec.buckets],
+        allow_duplicates=spec.allow_duplicates,
+    )
+
+
+class ScanRequest(BaseModel):
+    """Body of ``POST /api/analysis/scan``: the user-selected analysis scope."""
+
+    source_ids: list[str] = Field(min_length=1)
+    subset_ids: list[str] = Field(default_factory=list[str])
+
+
+class ScannedPlaylistOut(BaseModel):
+    """One playlist that participated in a scan."""
+
+    id: str
+    name: str
+    track_count: int
+    role: Literal["source", "subset"]
+
+
+class OverlapPairOut(BaseModel):
+    """Pairwise overlap metrics between two scanned playlists."""
+
+    a_id: str
+    a_name: str
+    b_id: str
+    b_name: str
+    intersection: int
+    jaccard: float
+    containment_a_in_b: float
+    containment_b_in_a: float
+
+
+class DuplicatedTrackOut(BaseModel):
+    """One track living in several of the selected sub-playlists."""
+
+    track_id: str
+    name: str
+    n_playlists: int
+    playlist_names: list[str]
+
+
+class UnorganizedOut(BaseModel):
+    """The songs-without-a-place report; ``track_ids`` is complete (it feeds the sweep), ``sample_names`` is display-sized."""
+
+    count: int
+    track_ids: list[str]
+    sample_names: list[str]
+
+
+class ScanResultResponse(BaseModel):
+    """Typed view of a finished scan job (``GET /api/analysis/scan-result/{job_id}``)."""
+
+    playlists: list[ScannedPlaylistOut]
+    pairs: list[OverlapPairOut]
+    duplication: list[DuplicatedTrackOut]
+    duplication_total: int
+    unorganized: UnorganizedOut
+
+
+class SweepRequest(BaseModel):
+    """Body of ``POST /api/analysis/sweep``: create a placeholder playlist from unorganized tracks."""
+
+    name: str = Field(min_length=1)
+    track_ids: list[str] = Field(min_length=1)
+
+
+class SuggestSplitRequest(BaseModel):
+    """Body of ``POST /api/analysis/suggest-split``."""
+
+    playlist_id: str
+    target_buckets: int = Field(ge=1, le=50)
+    duplication_tolerance: float = Field(default=0.15, ge=0.0, le=1.0)
+
+
+class SuggestSplitResponse(BaseModel):
+    """The proposed spec (ready to load into the organizer) plus its dry-run numbers and decision notes."""
+
+    spec: OrganizerSpecIn
+    bucket_sizes: dict[str, int]
+    duplication_rate: float
+    coverage_pct: float
+    notes: list[str]
+
+
 def track_rows_from_df(df: pd.DataFrame) -> list[TrackRow]:
     """Convert the flattened track DataFrame into wire-ready rows.
 

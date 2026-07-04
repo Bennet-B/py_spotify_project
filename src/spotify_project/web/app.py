@@ -11,7 +11,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .errors import register_error_handlers
-from .routers import insights, jobs, organizer, playlists, system
+from .routers import analysis, insights, jobs, organizer, playlists, system
 
 # The Vite dev server origins. In dev the frontend proxies /api to this server, but direct browser calls still work thanks to CORS.
 _DEV_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     api.include_router(playlists.router)
     api.include_router(insights.router)
     api.include_router(organizer.router)
+    api.include_router(analysis.router)
     api.include_router(jobs.router)
     app.include_router(api)
     return app

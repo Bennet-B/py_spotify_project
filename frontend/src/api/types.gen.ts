@@ -323,6 +323,95 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/analysis/scan': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Scan
+     * @description Load the selected sources and subsets (cache-first, background job) and compute the full set-analysis.
+     *
+     *     Raises:
+     *         ValueError: Mapped to 400 when a playlist appears in both roles.
+     */
+    post: operations['scan_api_analysis_scan_post']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/analysis/scan-result/{job_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Scan Result
+     * @description The typed result of a finished scan job.
+     *
+     *     Raises:
+     *         NotFoundError: Mapped to 404 for unknown jobs, jobs that are not scans, or jobs that have not finished successfully.
+     */
+    get: operations['scan_result_api_analysis_scan_result__job_id__get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/analysis/sweep': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Sweep
+     * @description Create a placeholder playlist from unorganized tracks so they can be sorted manually (background job).
+     */
+    post: operations['sweep_api_analysis_sweep_post']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/analysis/suggest-split': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Suggest
+     * @description Propose an even bucket layout for the playlist — pure computation, nothing written; load the spec into the organizer to use it.
+     *
+     *     Raises:
+     *         DatasetNotLoadedError: Mapped to 409 when the playlist has no loaded dataset.
+     */
+    post: operations['suggest_api_analysis_suggest_split_post']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/jobs/{job_id}': {
     parameters: {
       query?: never
@@ -524,6 +613,20 @@ export interface components {
       new_artists: number
     }
     /**
+     * DuplicatedTrackOut
+     * @description One track living in several of the selected sub-playlists.
+     */
+    DuplicatedTrackOut: {
+      /** Track Id */
+      track_id: string
+      /** Name */
+      name: string
+      /** N Playlists */
+      n_playlists: number
+      /** Playlist Names */
+      playlist_names: string[]
+    }
+    /**
      * DurationRuleIn
      * @description Boundary mirror of ``organizer.DurationRule`` (whole seconds).
      */
@@ -668,6 +771,28 @@ export interface components {
       count: number
     }
     /**
+     * OverlapPairOut
+     * @description Pairwise overlap metrics between two scanned playlists.
+     */
+    OverlapPairOut: {
+      /** A Id */
+      a_id: string
+      /** A Name */
+      a_name: string
+      /** B Id */
+      b_id: string
+      /** B Name */
+      b_name: string
+      /** Intersection */
+      intersection: number
+      /** Jaccard */
+      jaccard: number
+      /** Containment A In B */
+      containment_a_in_b: number
+      /** Containment B In A */
+      containment_b_in_a: number
+    }
+    /**
      * PlaylistItem
      * @description One sidebar entry; id ``__liked__`` is the synthetic Liked Songs pseudo-playlist.
      *
@@ -777,6 +902,48 @@ export interface components {
       | components['schemas']['ArtistRuleIn']
       | components['schemas']['TrackRuleIn']
     /**
+     * ScanRequest
+     * @description Body of ``POST /api/analysis/scan``: the user-selected analysis scope.
+     */
+    ScanRequest: {
+      /** Source Ids */
+      source_ids: string[]
+      /** Subset Ids */
+      subset_ids?: string[]
+    }
+    /**
+     * ScanResultResponse
+     * @description Typed view of a finished scan job (``GET /api/analysis/scan-result/{job_id}``).
+     */
+    ScanResultResponse: {
+      /** Playlists */
+      playlists: components['schemas']['ScannedPlaylistOut'][]
+      /** Pairs */
+      pairs: components['schemas']['OverlapPairOut'][]
+      /** Duplication */
+      duplication: components['schemas']['DuplicatedTrackOut'][]
+      /** Duplication Total */
+      duplication_total: number
+      unorganized: components['schemas']['UnorganizedOut']
+    }
+    /**
+     * ScannedPlaylistOut
+     * @description One playlist that participated in a scan.
+     */
+    ScannedPlaylistOut: {
+      /** Id */
+      id: string
+      /** Name */
+      name: string
+      /** Track Count */
+      track_count: number
+      /**
+       * Role
+       * @enum {string}
+       */
+      role: 'source' | 'subset'
+    }
+    /**
      * SeasonalResponse
      * @description Response of ``GET .../insights/seasonal``.
      */
@@ -795,6 +962,48 @@ export interface components {
       month_name: string
       /** Added */
       added: number
+    }
+    /**
+     * SuggestSplitRequest
+     * @description Body of ``POST /api/analysis/suggest-split``.
+     */
+    SuggestSplitRequest: {
+      /** Playlist Id */
+      playlist_id: string
+      /** Target Buckets */
+      target_buckets: number
+      /**
+       * Duplication Tolerance
+       * @default 0.15
+       */
+      duplication_tolerance: number
+    }
+    /**
+     * SuggestSplitResponse
+     * @description The proposed spec (ready to load into the organizer) plus its dry-run numbers and decision notes.
+     */
+    SuggestSplitResponse: {
+      spec: components['schemas']['OrganizerSpecIn']
+      /** Bucket Sizes */
+      bucket_sizes: {
+        [key: string]: number
+      }
+      /** Duplication Rate */
+      duplication_rate: number
+      /** Coverage Pct */
+      coverage_pct: number
+      /** Notes */
+      notes: string[]
+    }
+    /**
+     * SweepRequest
+     * @description Body of ``POST /api/analysis/sweep``: create a placeholder playlist from unorganized tracks.
+     */
+    SweepRequest: {
+      /** Name */
+      name: string
+      /** Track Ids */
+      track_ids: string[]
     }
     /**
      * TagRuleIn
@@ -873,6 +1082,18 @@ export interface components {
       name: string
       /** Tracks */
       tracks: components['schemas']['TrackRow'][]
+    }
+    /**
+     * UnorganizedOut
+     * @description The songs-without-a-place report; ``track_ids`` is complete (it feeds the sweep), ``sample_names`` is display-sized.
+     */
+    UnorganizedOut: {
+      /** Count */
+      count: number
+      /** Track Ids */
+      track_ids: string[]
+      /** Sample Names */
+      sample_names: string[]
     }
     /** ValidationError */
     ValidationError: {
@@ -1364,6 +1585,136 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['BatchesResponse']
+        }
+      }
+    }
+  }
+  scan_api_analysis_scan_post: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ScanRequest']
+      }
+    }
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['JobAccepted']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  scan_result_api_analysis_scan_result__job_id__get: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        job_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ScanResultResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  sweep_api_analysis_sweep_post: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SweepRequest']
+      }
+    }
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['JobAccepted']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  suggest_api_analysis_suggest_split_post: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SuggestSplitRequest']
+      }
+    }
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuggestSplitResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
         }
       }
     }
