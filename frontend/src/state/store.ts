@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+﻿import { create } from 'zustand'
 import type { components } from '../api/types.gen'
 
 export type RuleIn = components['schemas']['BucketSpecIn']['rules'][number]
@@ -27,7 +27,7 @@ export function selectionsToRules(selections: Selections): RuleIn[] {
   return rules
 }
 
-/** Chart-driven selection fragments — the raw material organizer rules are built from (M2). */
+/** Chart-driven selection fragments â€” the raw material organizer rules are built from (M2). */
 export interface Selections {
   genres: string[]
   yearRange: [number, number] | null
@@ -42,11 +42,11 @@ const EMPTY_SELECTIONS: Selections = { genres: [], yearRange: null, durationRang
 
 /**
  * Cross-component workbench state: selected playlist, running refresh jobs, the active view, and chart selections.
- * Switching playlists resets the selections — they are meaningless against another library.
+ * Switching playlists resets the selections â€” they are meaningless against another library.
  */
 interface WorkbenchState {
   selectedPlaylistId: string | null
-  activeView: 'explore' | 'organize' | 'tracks'
+  activeView: 'explore' | 'organize' | 'analyze' | 'tracks'
   /** playlistId -> id of the currently running refresh job. */
   jobs: Record<string, string>
   selections: Selections
@@ -57,7 +57,7 @@ interface WorkbenchState {
   /** Artist id -> display name, remembered from chart clicks so artist rules render readable chips. */
   artistNames: Record<string, string>
   select: (playlistId: string) => void
-  setView: (view: 'explore' | 'organize' | 'tracks') => void
+  setView: (view: 'explore' | 'organize' | 'analyze' | 'tracks') => void
   setJob: (playlistId: string, jobId: string) => void
   clearJob: (playlistId: string) => void
   toggleGenre: (label: string) => void
@@ -71,9 +71,11 @@ interface WorkbenchState {
   renameBucket: (bucketId: string, name: string) => void
   setActiveBucket: (bucketId: string) => void
   removeRule: (bucketId: string, ruleIndex: number) => void
-  /** The selections→rules moment: append the current selections to the active bucket as rules, then clear them. */
+  /** The selectionsâ†’rules moment: append the current selections to the active bucket as rules, then clear them. */
   addSelectionsToActiveBucket: () => void
   setAllowDuplicates: (allow: boolean) => void
+  /** Replace the bucket drafts with a spec (used by suggest-split's "Load into organizer"). */
+  setBucketsFromSpec: (spec: OrganizerSpecIn) => void
 }
 
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
@@ -135,4 +137,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     })
   },
   setAllowDuplicates: (allow) => set({ allowDuplicates: allow }),
+  setBucketsFromSpec: (spec) => {
+    const buckets = spec.buckets.map((bucket) => ({ id: crypto.randomUUID(), name: bucket.name, rules: bucket.rules }))
+    set({ buckets, allowDuplicates: spec.allow_duplicates ?? true, activeBucketId: buckets[0]?.id ?? null, activeView: 'organize' })
+  },
 }))

@@ -145,6 +145,56 @@ export function useReleaseVsAdded(playlistId: string) {
 
 export type PreviewResponse = components['schemas']['PreviewResponse']
 export type ApplyRequest = components['schemas']['ApplyRequest']
+export type ScanRequest = components['schemas']['ScanRequest']
+export type ScanResult = components['schemas']['ScanResultResponse']
+export type SuggestSplitRequest = components['schemas']['SuggestSplitRequest']
+export type SuggestSplitResult = components['schemas']['SuggestSplitResponse']
+
+/** Start a set-analysis scan job over the chosen sources and subsets. */
+export function useScan() {
+  return useMutation({
+    mutationFn: async (request: ScanRequest) => {
+      const { data, error } = await api.POST('/api/analysis/scan', { body: request })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+/** Typed result of a finished scan job (404 until the job is done — gate on job status before enabling). */
+export function useScanResult(jobId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['scan-result', jobId],
+    enabled: jobId !== null && enabled,
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/analysis/scan-result/{job_id}', { params: { path: { job_id: jobId! } } })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+/** Sweep unorganized tracks into a placeholder playlist (job). */
+export function useSweep() {
+  return useMutation({
+    mutationFn: async (request: { name: string; track_ids: string[] }) => {
+      const { data, error } = await api.POST('/api/analysis/sweep', { body: request })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+/** Ask for a suggested bucket layout (synchronous, pure). */
+export function useSuggestSplit() {
+  return useMutation({
+    mutationFn: async (request: SuggestSplitRequest) => {
+      const { data, error } = await api.POST('/api/analysis/suggest-split', { body: request })
+      if (error) throw error
+      return data
+    },
+  })
+}
 
 /** Debounced live dry-run of the organizer spec; keeps the previous preview visible while the next one computes. */
 export function usePreview(playlistId: string | null, spec: OrganizerSpecIn) {

@@ -663,6 +663,175 @@
         }
       }
     },
+    "/api/analysis/scan": {
+      "post": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Scan",
+        "description": "Load the selected sources and subsets (cache-first, background job) and compute the full set-analysis.\n\nRaises:\n    ValueError: Mapped to 400 when a playlist appears in both roles.",
+        "operationId": "scan_api_analysis_scan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analysis/scan-result/{job_id}": {
+      "get": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Scan Result",
+        "description": "The typed result of a finished scan job.\n\nRaises:\n    NotFoundError: Mapped to 404 for unknown jobs, jobs that are not scans, or jobs that have not finished successfully.",
+        "operationId": "scan_result_api_analysis_scan_result__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analysis/sweep": {
+      "post": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Sweep",
+        "description": "Create a placeholder playlist from unorganized tracks so they can be sorted manually (background job).",
+        "operationId": "sweep_api_analysis_sweep_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SweepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analysis/suggest-split": {
+      "post": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Suggest",
+        "description": "Propose an even bucket layout for the playlist \u2014 pure computation, nothing written; load the spec into the organizer to use it.\n\nRaises:\n    DatasetNotLoadedError: Mapped to 409 when the playlist has no loaded dataset.",
+        "operationId": "suggest_api_analysis_suggest_split_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestSplitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestSplitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{job_id}": {
       "get": {
         "tags": [
@@ -1057,6 +1226,38 @@
         "title": "DiscoveryRow",
         "description": "One period of the artist-discovery-waves chart."
       },
+      "DuplicatedTrackOut": {
+        "properties": {
+          "track_id": {
+            "type": "string",
+            "title": "Track Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "n_playlists": {
+            "type": "integer",
+            "title": "N Playlists"
+          },
+          "playlist_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Playlist Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "track_id",
+          "name",
+          "n_playlists",
+          "playlist_names"
+        ],
+        "title": "DuplicatedTrackOut",
+        "description": "One track living in several of the selected sub-playlists."
+      },
       "DurationRuleIn": {
         "properties": {
           "kind": {
@@ -1358,6 +1559,55 @@
         "title": "OverlapOut",
         "description": "Tracks shared by two buckets."
       },
+      "OverlapPairOut": {
+        "properties": {
+          "a_id": {
+            "type": "string",
+            "title": "A Id"
+          },
+          "a_name": {
+            "type": "string",
+            "title": "A Name"
+          },
+          "b_id": {
+            "type": "string",
+            "title": "B Id"
+          },
+          "b_name": {
+            "type": "string",
+            "title": "B Name"
+          },
+          "intersection": {
+            "type": "integer",
+            "title": "Intersection"
+          },
+          "jaccard": {
+            "type": "number",
+            "title": "Jaccard"
+          },
+          "containment_a_in_b": {
+            "type": "number",
+            "title": "Containment A In B"
+          },
+          "containment_b_in_a": {
+            "type": "number",
+            "title": "Containment B In A"
+          }
+        },
+        "type": "object",
+        "required": [
+          "a_id",
+          "a_name",
+          "b_id",
+          "b_name",
+          "intersection",
+          "jaccard",
+          "containment_a_in_b",
+          "containment_b_in_a"
+        ],
+        "title": "OverlapPairOut",
+        "description": "Pairwise overlap metrics between two scanned playlists."
+      },
       "PlaylistItem": {
         "properties": {
           "id": {
@@ -1622,6 +1872,106 @@
           }
         }
       },
+      "ScanRequest": {
+        "properties": {
+          "source_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Source Ids"
+          },
+          "subset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Subset Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_ids"
+        ],
+        "title": "ScanRequest",
+        "description": "Body of ``POST /api/analysis/scan``: the user-selected analysis scope."
+      },
+      "ScanResultResponse": {
+        "properties": {
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/ScannedPlaylistOut"
+            },
+            "type": "array",
+            "title": "Playlists"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/OverlapPairOut"
+            },
+            "type": "array",
+            "title": "Pairs"
+          },
+          "duplication": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicatedTrackOut"
+            },
+            "type": "array",
+            "title": "Duplication"
+          },
+          "duplication_total": {
+            "type": "integer",
+            "title": "Duplication Total"
+          },
+          "unorganized": {
+            "$ref": "#/components/schemas/UnorganizedOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "playlists",
+          "pairs",
+          "duplication",
+          "duplication_total",
+          "unorganized"
+        ],
+        "title": "ScanResultResponse",
+        "description": "Typed view of a finished scan job (``GET /api/analysis/scan-result/{job_id}``)."
+      },
+      "ScannedPlaylistOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "track_count": {
+            "type": "integer",
+            "title": "Track Count"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "source",
+              "subset"
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "track_count",
+          "role"
+        ],
+        "title": "ScannedPlaylistOut",
+        "description": "One playlist that participated in a scan."
+      },
       "SeasonalResponse": {
         "properties": {
           "rows": {
@@ -1662,6 +2012,97 @@
         ],
         "title": "SeasonalRow",
         "description": "One calendar month of the seasonal-profile chart (always 12 rows)."
+      },
+      "SuggestSplitRequest": {
+        "properties": {
+          "playlist_id": {
+            "type": "string",
+            "title": "Playlist Id"
+          },
+          "target_buckets": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Target Buckets"
+          },
+          "duplication_tolerance": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Duplication Tolerance",
+            "default": 0.15
+          }
+        },
+        "type": "object",
+        "required": [
+          "playlist_id",
+          "target_buckets"
+        ],
+        "title": "SuggestSplitRequest",
+        "description": "Body of ``POST /api/analysis/suggest-split``."
+      },
+      "SuggestSplitResponse": {
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/OrganizerSpecIn"
+          },
+          "bucket_sizes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Bucket Sizes"
+          },
+          "duplication_rate": {
+            "type": "number",
+            "title": "Duplication Rate"
+          },
+          "coverage_pct": {
+            "type": "number",
+            "title": "Coverage Pct"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "spec",
+          "bucket_sizes",
+          "duplication_rate",
+          "coverage_pct",
+          "notes"
+        ],
+        "title": "SuggestSplitResponse",
+        "description": "The proposed spec (ready to load into the organizer) plus its dry-run numbers and decision notes."
+      },
+      "SweepRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Track Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "track_ids"
+        ],
+        "title": "SweepRequest",
+        "description": "Body of ``POST /api/analysis/sweep``: create a placeholder playlist from unorganized tracks."
       },
       "TagRuleIn": {
         "properties": {
@@ -1866,6 +2307,36 @@
         ],
         "title": "TracksResponse",
         "description": "Response of ``GET /api/playlists/{id}/tracks``."
+      },
+      "UnorganizedOut": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Track Ids"
+          },
+          "sample_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sample Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "track_ids",
+          "sample_names"
+        ],
+        "title": "UnorganizedOut",
+        "description": "The songs-without-a-place report; ``track_ids`` is complete (it feeds the sweep), ``sample_names`` is display-sized."
       },
       "ValidationError": {
         "properties": {

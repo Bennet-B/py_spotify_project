@@ -6,6 +6,7 @@ import type { BucketDraft, OrganizerSpecIn } from '../../state/store'
 import { formatDuration } from '../../lib/format'
 import { ruleLabel } from './ruleLabel'
 import { ApplyDialog } from './ApplyDialog'
+import { SuggestSplitDialog } from './SuggestSplitDialog'
 
 function BucketCard({ bucket }: { bucket: BucketDraft }) {
   const activeBucketId = useWorkbenchStore((s) => s.activeBucketId)
@@ -165,6 +166,7 @@ export function OrganizerView({ playlistId, tracks }: { playlistId: string; trac
   const setAllowDuplicates = useWorkbenchStore((s) => s.setAllowDuplicates)
   const addBucket = useWorkbenchStore((s) => s.addBucket)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [suggestOpen, setSuggestOpen] = useState(false)
 
   const spec = useMemo<OrganizerSpecIn>(() => ({ buckets: buckets.map((b) => ({ name: b.name, rules: b.rules })), allow_duplicates: allowDuplicates }), [buckets, allowDuplicates])
   const preview = usePreview(buckets.length > 0 ? playlistId : null, spec)
@@ -190,6 +192,13 @@ export function OrganizerView({ playlistId, tracks }: { playlistId: string; trac
         >
           + Add bucket
         </button>
+        <button
+          type="button"
+          className="w-full rounded-lg border border-dashed border-blue-300 py-2 text-sm text-blue-600 hover:border-blue-400 hover:bg-blue-50"
+          onClick={() => setSuggestOpen(true)}
+        >
+          ✨ Suggest a split…
+        </button>
         <p className="text-xs leading-relaxed text-gray-400">
           Build rules in <strong>Explore</strong>: click genre/artist bars, box-select year or length ranges, lasso the scatter — then “Add to bucket”. Rules AND together inside a bucket.
           {!allowDuplicates && ' Without duplicates, bucket order is priority order.'}
@@ -200,6 +209,7 @@ export function OrganizerView({ playlistId, tracks }: { playlistId: string; trac
         <BatchHistory />
       </div>
       {dialogOpen && preview.data !== undefined && <ApplyDialog playlistId={playlistId} spec={spec} preview={preview.data} onClose={() => setDialogOpen(false)} />}
+      {suggestOpen && <SuggestSplitDialog playlistId={playlistId} onClose={() => setSuggestOpen(false)} />}
     </div>
   )
 }

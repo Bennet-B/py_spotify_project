@@ -163,11 +163,10 @@ class TestSummarize:
         assert stats.rest_count == 1
         assert stats.coverage_pct == pytest.approx(75.0)  # pyright: ignore[reportUnknownMemberType]
         assert stats.duplicate_count == 1
-        assert (
-            (stats.overlaps[0].count == 1
-            and (stats.overlaps[0].bucket_a, stats.overlaps[0].bucket_b) == ("Jazz", "Rock"))
-            or (stats.overlaps[0].bucket_a, stats.overlaps[0].bucket_b) == ("Rock", "Jazz")
-        )
+        assert (stats.overlaps[0].count == 1 and (stats.overlaps[0].bucket_a, stats.overlaps[0].bucket_b) == ("Jazz", "Rock")) or (
+            stats.overlaps[0].bucket_a,
+            stats.overlaps[0].bucket_b,
+        ) == ("Rock", "Jazz")
         assert stats.skipped_local_count == 1
 
     def test_no_eligible_tracks_gives_zero_coverage(self) -> None:
