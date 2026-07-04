@@ -7,11 +7,13 @@ job. The OpenAPI schema generated from these models is the source of truth for t
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from .. import organizer
+from .batches import Batch
 from .jobs import JobSnapshot, JobStatus
 
 
@@ -230,6 +232,180 @@ class ReleaseVsAddedResponse(BaseModel):
     """Response of ``GET .../insights/release-vs-added``."""
 
     rows: list[ReleaseVsAddedRow]
+
+
+class TagRuleIn(BaseModel):
+    """Boundary mirror of ``organizer.TagRule``: match any of the labels (case-insensitive) in the chosen field."""
+
+    kind: Literal["tag"] = "tag"
+    labels: list[str] = Field(min_length=1)
+    field: Literal["genres", "tags"] = "genres"
+
+
+class YearRuleIn(BaseModel):
+    """Boundary mirror of ``organizer.YearRule``; bound validation happens in the core dataclass."""
+
+    kind: Literal["year"] = "year"
+    min_year: int | None = None
+    max_year: int | None = None
+
+
+class DurationRuleIn(BaseModel):
+    """Boundary mirror of ``organizer.DurationRule`` (whole seconds)."""
+
+    kind: Literal["duration"] = "duration"
+    min_seconds: int | None = None
+    max_seconds: int | None = None
+
+
+class ArtistRuleIn(BaseModel):
+    """Boundary mirror of ``organizer.ArtistRule``: match any credited artist."""
+
+    kind: Literal["artist"] = "artist"
+    artist_ids: list[str] = Field(min_length=1)
+
+
+class TrackRuleIn(BaseModel):
+    """Boundary mirror of ``organizer.TrackRule``: an explicit track-id set (the lasso selection)."""
+
+    kind: Literal["track"] = "track"
+    track_ids: list[str] = Field(min_length=1)
+
+
+type RuleIn = Annotated[TagRuleIn | YearRuleIn | DurationRuleIn | ArtistRuleIn | TrackRuleIn, Field(discriminator="kind")]
+
+
+class BucketSpecIn(BaseModel):
+    """One named bucket; rules AND together."""
+
+    name: str = Field(min_length=1)
+    rules: list[RuleIn] = Field(default_factory=list[RuleIn])
+
+
+class OrganizerSpecIn(BaseModel):
+    """The organizer configuration as sent by the frontend."""
+
+    buckets: list[BucketSpecIn] = Field(default_factory=list[BucketSpecIn])
+    allow_duplicates: bool = True
+
+
+def to_core_spec(spec: OrganizerSpecIn) -> organizer.OrganizerSpec:
+    """Convert the boundary spec into core dataclasses.
+
+    Core ``__post_init__`` invariants (inverted bounds, duplicate bucket names, ...) raise ValueError, which the error handlers map to HTTP 400.
+
+    Args:
+        spec: The validated request body.
+
+    Returns:
+        The equivalent ``organizer.OrganizerSpec``.
+    """
+
+    def to_rule(rule: TagRuleIn | YearRuleIn | DurationRuleIn | ArtistRuleIn | TrackRuleIn) -> organizer.Rule:
+        match rule:
+            case TagRuleIn():
+                return organizer.TagRule(labels=frozenset(rule.labels), field=rule.field)
+            case YearRuleIn():
+                return organizer.YearRule(min_year=rule.min_year, max_year=rule.max_year)
+            case DurationRuleIn():
+                return organizer.DurationRule(min_seconds=rule.min_seconds, max_seconds=rule.max_seconds)
+            case ArtistRuleIn():
+                return organizer.ArtistRule(artist_ids=frozenset(rule.artist_ids))
+            case TrackRuleIn():
+                return organizer.TrackRule(track_ids=frozenset(rule.track_ids))
+
+    return organizer.OrganizerSpec(
+        buckets=tuple(organizer.BucketSpec(name=bucket.name, rules=tuple(to_rule(rule) for rule in bucket.rules)) for bucket in spec.buckets),
+        allow_duplicates=spec.allow_duplicates,
+    )
+
+
+class PreviewRequest(BaseModel):
+    """Body of ``POST /api/organizer/preview``."""
+
+    playlist_id: str
+    spec: OrganizerSpecIn
+
+
+class BucketPreview(BaseModel):
+    """One bucket's dry-run result."""
+
+    name: str
+    count: int
+    duration_ms_total: int
+    track_ids: list[str]
+
+
+class OverlapOut(BaseModel):
+    """Tracks shared by two buckets."""
+
+    bucket_a: str
+    bucket_b: str
+    count: int
+
+
+class PreviewStats(BaseModel):
+    """Aggregate dry-run numbers."""
+
+    coverage_pct: float
+    duplicate_count: int
+    overlaps: list[OverlapOut]
+    skipped_local_count: int
+
+
+class PreviewResponse(BaseModel):
+    """Response of ``POST /api/organizer/preview`` — a pure dry-run, nothing written."""
+
+    buckets: list[BucketPreview]
+    rest_track_ids: list[str]
+    rest_count: int
+    stats: PreviewStats
+
+
+class ApplyRequest(BaseModel):
+    """Body of ``POST /api/organizer/apply``: which buckets of the spec to materialize, under which batch name."""
+
+    playlist_id: str
+    spec: OrganizerSpecIn
+    bucket_names: list[str] = Field(min_length=1)
+    include_rest: bool = False
+    rest_name: str = Field(default="Rest", min_length=1)
+    public: bool = False
+    batch_name: str = Field(min_length=1)
+
+
+class CreatedPlaylistOut(BaseModel):
+    """One playlist created by an Apply."""
+
+    bucket_name: str
+    playlist_id: str
+    url: str
+    added: int
+
+
+class BatchOut(BaseModel):
+    """One recorded Apply batch."""
+
+    batch_name: str
+    created_at: str
+    source_playlist_id: str
+    created: list[CreatedPlaylistOut]
+
+    @classmethod
+    def from_batch(cls, batch: Batch) -> BatchOut:
+        """Convert a stored batch into the wire shape."""
+        return cls(
+            batch_name=batch.batch_name,
+            created_at=batch.created_at,
+            source_playlist_id=batch.source_playlist_id,
+            created=[CreatedPlaylistOut(bucket_name=c.bucket_name, playlist_id=c.playlist_id, url=c.url, added=c.added) for c in batch.created],
+        )
+
+
+class BatchesResponse(BaseModel):
+    """Response of ``GET /api/organizer/batches``, newest first."""
+
+    batches: list[BatchOut]
 
 
 def track_rows_from_df(df: pd.DataFrame) -> list[TrackRow]:

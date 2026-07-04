@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
@@ -37,6 +37,8 @@ class SpotifyClient:
         genre_enricher: Optional Last.fm client. When set, ``_enrich_with_artists`` calls ``fetch_artist_tags`` per artist after Spotify resolves; when None, ``Artist.tags`` stays empty.
     """
 
+    # The two playlist-modify scopes exist for the organizer's Apply (create playlists + add tracks). Widening the scope set invalidates
+    # spotipy's cached token once: the next API call re-runs the browser consent flow, after which the new token is cached as usual.
     DEFAULT_SCOPES: ClassVar[list[str]] = [
         "user-read-private",
         "user-read-email",
@@ -44,6 +46,8 @@ class SpotifyClient:
         "playlist-read-collaborative",
         "user-library-read",
         "user-top-read",
+        "playlist-modify-private",
+        "playlist-modify-public",
     ]
 
     REQUIRED_ENV_VARS: ClassVar[tuple[str, ...]] = (
@@ -209,6 +213,12 @@ class SpotifyClient:
 
     def _sp_artist(self, artist_id: str) -> dict[str, Any]:
         return cast(dict[str, Any], self._call(self.sp.artist, artist_id))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+
+    def _sp_user_playlist_create(self, user_id: str, name: str, *, public: bool, description: str) -> dict[str, Any]:
+        return cast(dict[str, Any], self._call(self.sp.user_playlist_create, user_id, name, public=public, description=description))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+
+    def _sp_playlist_add_items(self, playlist_id: str, item_ids: list[str]) -> dict[str, Any]:
+        return cast(dict[str, Any], self._call(self.sp.playlist_add_items, playlist_id, item_ids))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
 
     # endregion
 
@@ -410,6 +420,57 @@ class SpotifyClient:
             artist_by_id = enriched
 
         return [Track.from_api(item, artist_by_id) for item in audio_tracks]
+
+    # Number of track ids the add-items endpoint accepts per call.
+    ADD_TRACKS_CHUNK_SIZE: ClassVar[int] = 100
+
+    def create_playlist(self, user_id: str, name: str, *, public: bool = False, description: str = "") -> str:
+        """Create a new (initially empty) playlist for the user.
+
+        Args:
+            user_id: The owning user's Spotify id (from ``fetch_current_user``).
+            name: Playlist display name.
+            public: Whether the playlist is public; the organizer defaults to private.
+            description: Playlist description (the organizer stamps its batch marker here).
+
+        Returns:
+            The new playlist's id.
+
+        Raises:
+            RuntimeError: If the API response carries no playlist id.
+        """
+        logger.info("Creating playlist %r for user %s (public=%s)", name, user_id, public)
+        data = self._sp_user_playlist_create(user_id, name, public=public, description=description)
+        playlist_id = data.get("id")
+        if not playlist_id:
+            raise RuntimeError(f"Playlist creation for {name!r} returned no id; keys: {list(data.keys())}")
+        return str(playlist_id)
+
+    def add_tracks(self, playlist_id: str, track_ids: Sequence[str], *, on_progress: ProgressFn | None = None) -> int:
+        """Add tracks to a playlist in API-sized chunks.
+
+        Local files have no Spotify id and are rejected by the API — callers pass real track ids only (the organizer filters and reports them).
+
+        Args:
+            playlist_id: Target playlist id.
+            track_ids: Track ids to add, in order.
+            on_progress: Optional ``(phase, done, total)`` callback with phase ``"add_tracks"``, fired per chunk.
+
+        Returns:
+            Number of tracks added.
+
+        Raises:
+            ValueError: If any id is empty/falsy — a symptom of unfiltered local files upstream.
+        """
+        ids = list(track_ids)
+        if any(not track_id for track_id in ids):
+            raise ValueError("add_tracks got an empty track id; filter local files before calling")
+        for start in range(0, len(ids), self.ADD_TRACKS_CHUNK_SIZE):
+            self._sp_playlist_add_items(playlist_id, ids[start : start + self.ADD_TRACKS_CHUNK_SIZE])
+            if on_progress is not None:
+                on_progress("add_tracks", min(start + self.ADD_TRACKS_CHUNK_SIZE, len(ids)), len(ids))
+        logger.info("Added %d tracks to playlist %s", len(ids), playlist_id)
+        return len(ids)
 
     def fetch_artists(self, artist_ids: Iterable[str], *, force_refresh: bool = False, on_progress: ProgressFn | None = None) -> list[Artist]:
         """Fetch artists by ID, one call per artist.

@@ -452,6 +452,52 @@ class TestRateLimitHandling:
         assert excinfo.value.http_status == 500  # pyright: ignore[reportUnknownMemberType]
 
 
+class TestMutations:
+    """Tests for create_playlist and add_tracks — the organizer's Apply primitives."""
+
+    def test_create_playlist_returns_id(self, tmp_path: Path) -> None:
+        cache = FileCache(root=tmp_path)
+        fake_sp = MagicMock()
+        fake_sp.user_playlist_create.return_value = {"id": "new_pl", "name": "[Batch] Rock"}
+
+        client = SpotifyClient(sp=fake_sp, cache=cache)
+        playlist_id = client.create_playlist("u1", "[Batch] Rock", public=False, description="created by spotify_project")
+
+        assert playlist_id == "new_pl"
+        fake_sp.user_playlist_create.assert_called_once_with("u1", "[Batch] Rock", public=False, description="created by spotify_project")
+
+    def test_create_playlist_without_id_raises(self, tmp_path: Path) -> None:
+        cache = FileCache(root=tmp_path)
+        fake_sp = MagicMock()
+        fake_sp.user_playlist_create.return_value = {"error": "nope"}
+
+        client = SpotifyClient(sp=fake_sp, cache=cache)
+        with pytest.raises(RuntimeError, match="no id"):
+            client.create_playlist("u1", "X")
+
+    def test_add_tracks_chunks_at_100(self, tmp_path: Path) -> None:
+        """250 ids arrive as calls of 100/100/50, in order, and report per-chunk progress."""
+        cache = FileCache(root=tmp_path)
+        fake_sp = MagicMock()
+        ids = [f"t{i}" for i in range(250)]
+        events: list[tuple[str, int, int | None]] = []
+
+        client = SpotifyClient(sp=fake_sp, cache=cache)
+        added = client.add_tracks("pl1", ids, on_progress=lambda phase, done, total: events.append((phase, done, total)))
+
+        assert added == 250
+        chunk_sizes = [len(call.args[1]) for call in fake_sp.playlist_add_items.call_args_list]
+        assert chunk_sizes == [100, 100, 50]
+        assert fake_sp.playlist_add_items.call_args_list[0].args == ("pl1", ids[:100])
+        assert events == [("add_tracks", 100, 250), ("add_tracks", 200, 250), ("add_tracks", 250, 250)]
+
+    def test_add_tracks_rejects_empty_ids(self, tmp_path: Path) -> None:
+        cache = FileCache(root=tmp_path)
+        client = SpotifyClient(sp=MagicMock(), cache=cache)
+        with pytest.raises(ValueError, match="empty track id"):
+            client.add_tracks("pl1", ["t1", ""])
+
+
 class TestProgressCallback:
     """Tests for the on_progress callback threading through the fetch methods."""
 

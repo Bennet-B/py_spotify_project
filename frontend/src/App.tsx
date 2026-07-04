@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar'
 import { ProgressBar } from './components/ProgressBar'
 import { TrackTable } from './features/library/TrackTable'
 import { ExploreView } from './features/explore/ExploreView'
+import { OrganizerView } from './features/organizer/OrganizerView'
 import { useWorkbenchStore } from './state/store'
 
 function ViewTabs() {
@@ -12,6 +13,7 @@ function ViewTabs() {
   const setView = useWorkbenchStore((s) => s.setView)
   const tabs = [
     { id: 'explore', label: 'Explore' },
+    { id: 'organize', label: 'Organize' },
     { id: 'tracks', label: 'Tracks' },
   ] as const
   return (
@@ -52,7 +54,9 @@ function Main() {
     return (
       <>
         <ViewTabs />
-        {activeView === 'explore' ? <ExploreView playlistId={selectedId} tracks={tracks.data.tracks} /> : <TrackTable name={tracks.data.name} tracks={tracks.data.tracks} />}
+        {activeView === 'explore' && <ExploreView playlistId={selectedId} tracks={tracks.data.tracks} />}
+        {activeView === 'organize' && <OrganizerView playlistId={selectedId} tracks={tracks.data.tracks} />}
+        {activeView === 'tracks' && <TrackTable name={tracks.data.name} tracks={tracks.data.tracks} />}
       </>
     )
   }

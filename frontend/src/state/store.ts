@@ -1,8 +1,30 @@
 import { create } from 'zustand'
+import type { components } from '../api/types.gen'
+
+export type RuleIn = components['schemas']['BucketSpecIn']['rules'][number]
+export type OrganizerSpecIn = components['schemas']['OrganizerSpecIn']
 
 export interface ArtistSelection {
   id: string
   name: string
+}
+
+/** A bucket being edited in the UI; `id` is local-only (React keys), the API sees only name + rules. */
+export interface BucketDraft {
+  id: string
+  name: string
+  rules: RuleIn[]
+}
+
+/** Convert the current chart selections into rules (one per non-empty selection kind). */
+export function selectionsToRules(selections: Selections): RuleIn[] {
+  const rules: RuleIn[] = []
+  if (selections.genres.length > 0) rules.push({ kind: 'tag', labels: selections.genres, field: 'genres' })
+  if (selections.yearRange !== null) rules.push({ kind: 'year', min_year: selections.yearRange[0], max_year: selections.yearRange[1] })
+  if (selections.durationRange !== null) rules.push({ kind: 'duration', min_seconds: selections.durationRange[0], max_seconds: selections.durationRange[1] })
+  if (selections.artists.length > 0) rules.push({ kind: 'artist', artist_ids: selections.artists.map((a) => a.id) })
+  if (selections.trackIds.length > 0) rules.push({ kind: 'track', track_ids: selections.trackIds })
+  return rules
 }
 
 /** Chart-driven selection fragments — the raw material organizer rules are built from (M2). */
@@ -24,12 +46,18 @@ const EMPTY_SELECTIONS: Selections = { genres: [], yearRange: null, durationRang
  */
 interface WorkbenchState {
   selectedPlaylistId: string | null
-  activeView: 'explore' | 'tracks'
+  activeView: 'explore' | 'organize' | 'tracks'
   /** playlistId -> id of the currently running refresh job. */
   jobs: Record<string, string>
   selections: Selections
+  /** Organizer draft state. Buckets survive playlist switches (rules may apply to any source); selections do not. */
+  buckets: BucketDraft[]
+  activeBucketId: string | null
+  allowDuplicates: boolean
+  /** Artist id -> display name, remembered from chart clicks so artist rules render readable chips. */
+  artistNames: Record<string, string>
   select: (playlistId: string) => void
-  setView: (view: 'explore' | 'tracks') => void
+  setView: (view: 'explore' | 'organize' | 'tracks') => void
   setJob: (playlistId: string, jobId: string) => void
   clearJob: (playlistId: string) => void
   toggleGenre: (label: string) => void
@@ -38,13 +66,25 @@ interface WorkbenchState {
   toggleArtist: (artist: ArtistSelection) => void
   setTrackIds: (ids: string[]) => void
   clearSelections: () => void
+  addBucket: () => void
+  removeBucket: (bucketId: string) => void
+  renameBucket: (bucketId: string, name: string) => void
+  setActiveBucket: (bucketId: string) => void
+  removeRule: (bucketId: string, ruleIndex: number) => void
+  /** The selections→rules moment: append the current selections to the active bucket as rules, then clear them. */
+  addSelectionsToActiveBucket: () => void
+  setAllowDuplicates: (allow: boolean) => void
 }
 
-export const useWorkbenchStore = create<WorkbenchState>((set) => ({
+export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   selectedPlaylistId: null,
   activeView: 'explore',
   jobs: {},
   selections: EMPTY_SELECTIONS,
+  buckets: [],
+  activeBucketId: null,
+  allowDuplicates: true,
+  artistNames: {},
   select: (playlistId) => set({ selectedPlaylistId: playlistId, selections: EMPTY_SELECTIONS }),
   setView: (view) => set({ activeView: view }),
   setJob: (playlistId, jobId) => set((s) => ({ jobs: { ...s.jobs, [playlistId]: jobId } })),
@@ -64,6 +104,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setDurationRange: (range) => set((s) => ({ selections: { ...s.selections, durationRange: range } })),
   toggleArtist: (artist) =>
     set((s) => ({
+      artistNames: { ...s.artistNames, [artist.id]: artist.name },
       selections: {
         ...s.selections,
         artists: s.selections.artists.some((a) => a.id === artist.id) ? s.selections.artists.filter((a) => a.id !== artist.id) : [...s.selections.artists, artist],
@@ -71,4 +112,27 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     })),
   setTrackIds: (ids) => set((s) => ({ selections: { ...s.selections, trackIds: ids } })),
   clearSelections: () => set({ selections: EMPTY_SELECTIONS }),
+  addBucket: () =>
+    set((s) => {
+      const bucket: BucketDraft = { id: crypto.randomUUID(), name: `Bucket ${s.buckets.length + 1}`, rules: [] }
+      return { buckets: [...s.buckets, bucket], activeBucketId: bucket.id }
+    }),
+  removeBucket: (bucketId) =>
+    set((s) => ({
+      buckets: s.buckets.filter((b) => b.id !== bucketId),
+      activeBucketId: s.activeBucketId === bucketId ? null : s.activeBucketId,
+    })),
+  renameBucket: (bucketId, name) => set((s) => ({ buckets: s.buckets.map((b) => (b.id === bucketId ? { ...b, name } : b)) })),
+  setActiveBucket: (bucketId) => set({ activeBucketId: bucketId }),
+  removeRule: (bucketId, ruleIndex) => set((s) => ({ buckets: s.buckets.map((b) => (b.id === bucketId ? { ...b, rules: b.rules.filter((_, i) => i !== ruleIndex) } : b)) })),
+  addSelectionsToActiveBucket: () => {
+    const { activeBucketId, selections, buckets } = get()
+    const rules = selectionsToRules(selections)
+    if (activeBucketId === null || rules.length === 0) return
+    set({
+      buckets: buckets.map((b) => (b.id === activeBucketId ? { ...b, rules: [...b.rules, ...rules] } : b)),
+      selections: EMPTY_SELECTIONS,
+    })
+  },
+  setAllowDuplicates: (allow) => set({ allowDuplicates: allow }),
 }))

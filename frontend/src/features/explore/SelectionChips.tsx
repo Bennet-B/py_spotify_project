@@ -45,10 +45,35 @@ export function SelectionChips() {
       ))}
       {selections.trackIds.length > 0 && <Chip label={`${selections.trackIds.length} tracks from scatter`} onRemove={() => setTrackIds([])} />}
       {!empty && (
-        <button type="button" className="ml-auto text-xs text-gray-400 underline-offset-2 hover:text-gray-600 hover:underline" onClick={clearSelections}>
-          Clear all
-        </button>
+        <span className="ml-auto flex items-center gap-3">
+          <AddToBucketButton />
+          <button type="button" className="text-xs text-gray-400 underline-offset-2 hover:text-gray-600 hover:underline" onClick={clearSelections}>
+            Clear all
+          </button>
+        </span>
       )}
     </div>
+  )
+}
+
+/** Turns the current selections into rules on the active bucket (creating a first bucket if none exists) and jumps to the organizer. */
+function AddToBucketButton() {
+  const buckets = useWorkbenchStore((s) => s.buckets)
+  const activeBucketId = useWorkbenchStore((s) => s.activeBucketId)
+  const addBucket = useWorkbenchStore((s) => s.addBucket)
+  const addSelectionsToActiveBucket = useWorkbenchStore((s) => s.addSelectionsToActiveBucket)
+  const setView = useWorkbenchStore((s) => s.setView)
+  const activeName = buckets.find((b) => b.id === activeBucketId)?.name
+
+  function handleClick() {
+    if (activeBucketId === null) addBucket()
+    addSelectionsToActiveBucket()
+    setView('organize')
+  }
+
+  return (
+    <button type="button" className="rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700" onClick={handleClick}>
+      Add to {activeName !== undefined ? `“${activeName}”` : 'new bucket'} →
+    </button>
   )
 }
