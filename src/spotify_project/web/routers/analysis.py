@@ -124,9 +124,8 @@ def sweep(body: SweepRequest, client: ClientDep, registry: JobRegistryDep, batch
     """Create a placeholder playlist from unorganized tracks so they can be sorted manually (background job)."""
 
     def run(progress: ProgressFn) -> dict[str, Any]:
-        user = client.fetch_current_user()
         description = f"created by spotify_project · unorganized sweep · {datetime.now(UTC).date().isoformat()}"
-        playlist_id = client.create_playlist(user.id, body.name, public=False, description=description)
+        playlist_id = client.create_playlist(body.name, public=False, description=description)
         added = client.add_tracks(playlist_id, body.track_ids, on_progress=progress)
         url = f"https://open.spotify.com/playlist/{playlist_id}"
         batch_store.append(

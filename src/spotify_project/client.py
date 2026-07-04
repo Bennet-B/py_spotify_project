@@ -91,7 +91,7 @@ class SpotifyClient:
 
         Args:
             cache: FileCache for API response persistence.
-            scopes: OAuth scopes; defaults to ``DEFAULT_SCOPES`` (read-only).
+            scopes: OAuth scopes; defaults to ``DEFAULT_SCOPES`` (read + playlist-modify).
             genre_enricher: Optional Last.fm client for tag enrichment. When None (default), Artist.tags stays empty and the TagAnalyzer / GenreAnalyzer panels are skipped downstream.
 
         Returns:
@@ -214,8 +214,10 @@ class SpotifyClient:
     def _sp_artist(self, artist_id: str) -> dict[str, Any]:
         return cast(dict[str, Any], self._call(self.sp.artist, artist_id))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
 
-    def _sp_user_playlist_create(self, user_id: str, name: str, *, public: bool, description: str) -> dict[str, Any]:
-        return cast(dict[str, Any], self._call(self.sp.user_playlist_create, user_id, name, public=public, description=description))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+    def _sp_create_playlist(self, name: str, *, public: bool, description: str) -> dict[str, Any]:
+        # POST /users/{id}/playlists answers 403 for this app since the Feb 2026 migration; POST /me/playlists is the working route.
+        # spotipy 2.25 has no wrapper for it yet, so this is the one deliberate raw call — still through sp._post (auth) and _call (rate-limit guard).
+        return cast(dict[str, Any], self._call(self.sp._post, "me/playlists", payload={"name": name, "public": public, "description": description}))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType, reportPrivateUsage]
 
     def _sp_playlist_add_items(self, playlist_id: str, item_ids: list[str]) -> dict[str, Any]:
         return cast(dict[str, Any], self._call(self.sp.playlist_add_items, playlist_id, item_ids))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
@@ -424,11 +426,10 @@ class SpotifyClient:
     # Number of track ids the add-items endpoint accepts per call.
     ADD_TRACKS_CHUNK_SIZE: ClassVar[int] = 100
 
-    def create_playlist(self, user_id: str, name: str, *, public: bool = False, description: str = "") -> str:
-        """Create a new (initially empty) playlist for the user.
+    def create_playlist(self, name: str, *, public: bool = False, description: str = "") -> str:
+        """Create a new (initially empty) playlist for the authenticated user.
 
         Args:
-            user_id: The owning user's Spotify id (from ``fetch_current_user``).
             name: Playlist display name.
             public: Whether the playlist is public; the organizer defaults to private.
             description: Playlist description (the organizer stamps its batch marker here).
@@ -439,8 +440,8 @@ class SpotifyClient:
         Raises:
             RuntimeError: If the API response carries no playlist id.
         """
-        logger.info("Creating playlist %r for user %s (public=%s)", name, user_id, public)
-        data = self._sp_user_playlist_create(user_id, name, public=public, description=description)
+        logger.info("Creating playlist %r (public=%s)", name, public)
+        data = self._sp_create_playlist(name, public=public, description=description)
         playlist_id = data.get("id")
         if not playlist_id:
             raise RuntimeError(f"Playlist creation for {name!r} returned no id; keys: {list(data.keys())}")

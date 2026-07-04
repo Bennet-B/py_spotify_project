@@ -55,7 +55,7 @@ class FakeScanClient:
     def fetch_playlist(self, playlist_id: str, *, force_refresh: bool = False, on_progress: ProgressFn | None = None) -> Playlist:
         return self.playlists[playlist_id]
 
-    def create_playlist(self, user_id: str, name: str, *, public: bool = False, description: str = "") -> str:
+    def create_playlist(self, name: str, *, public: bool = False, description: str = "") -> str:
         self.calls.append(("create_playlist", {"name": name, "description": description}))
         return "swept_pl"
 
