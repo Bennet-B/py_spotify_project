@@ -112,6 +112,146 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/playlists/{playlist_id}/insights/labels': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Labels
+     * @description Tag/genre frequency bars — the primary rule-helper chart (bar click → tag filter).
+     */
+    get: operations['labels_api_playlists__playlist_id__insights_labels_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/playlists/{playlist_id}/insights/years': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Years
+     * @description Tracks per release year, pre-binned server-side so a bar click/box-select maps to exact years.
+     */
+    get: operations['years_api_playlists__playlist_id__insights_years_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/playlists/{playlist_id}/insights/additions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Additions
+     * @description Library growth: additions per period plus cumulative tracks/hours.
+     */
+    get: operations['additions_api_playlists__playlist_id__insights_additions_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/playlists/{playlist_id}/insights/discovery': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Discovery
+     * @description Artist discovery waves: how many artists enter the library for the first time per period.
+     */
+    get: operations['discovery_api_playlists__playlist_id__insights_discovery_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/playlists/{playlist_id}/insights/seasonal': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Seasonal
+     * @description Additions by calendar month aggregated across years (always 12 rows).
+     */
+    get: operations['seasonal_api_playlists__playlist_id__insights_seasonal_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/playlists/{playlist_id}/insights/artists': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Artists
+     * @description Track counts per credited artist; repeatable ``genre`` params implement the cascading genre→artist re-scope.
+     */
+    get: operations['artists_api_playlists__playlist_id__insights_artists_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/playlists/{playlist_id}/insights/release-vs-added': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Release Vs Added
+     * @description Release-year vs added-year scatter rows; carries track ids so a lasso selection can become a playlist.
+     */
+    get: operations['release_vs_added_api_playlists__playlist_id__insights_release_vs_added_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/jobs/{job_id}': {
     parameters: {
       query?: never
@@ -139,6 +279,78 @@ export interface paths {
 export type webhooks = Record<string, never>
 export interface components {
   schemas: {
+    /**
+     * AdditionRow
+     * @description One period of the library-growth chart.
+     */
+    AdditionRow: {
+      /**
+       * Period
+       * Format: date-time
+       */
+      period: string
+      /** Added */
+      added: number
+      /** Cumulative Tracks */
+      cumulative_tracks: number
+      /** Cumulative Hours */
+      cumulative_hours: number
+    }
+    /**
+     * AdditionsResponse
+     * @description Response of ``GET .../insights/additions``.
+     */
+    AdditionsResponse: {
+      /** Freq */
+      freq: string
+      /** Rows */
+      rows: components['schemas']['AdditionRow'][]
+    }
+    /**
+     * ArtistCountRow
+     * @description One bar of the (optionally genre-scoped) artist chart.
+     */
+    ArtistCountRow: {
+      /** Artist Id */
+      artist_id: string
+      /** Artist Name */
+      artist_name: string
+      /** Track Count */
+      track_count: number
+    }
+    /**
+     * ArtistsResponse
+     * @description Response of ``GET .../insights/artists``; ``scoped_to_genres`` echoes the cascading genre filter.
+     */
+    ArtistsResponse: {
+      /** Scoped To Genres */
+      scoped_to_genres: string[]
+      /** Rows */
+      rows: components['schemas']['ArtistCountRow'][]
+    }
+    /**
+     * DiscoveryResponse
+     * @description Response of ``GET .../insights/discovery``.
+     */
+    DiscoveryResponse: {
+      /** Freq */
+      freq: string
+      /** Rows */
+      rows: components['schemas']['DiscoveryRow'][]
+    }
+    /**
+     * DiscoveryRow
+     * @description One period of the artist-discovery-waves chart.
+     */
+    DiscoveryRow: {
+      /**
+       * Period
+       * Format: date-time
+       */
+      period: string
+      /** New Artists */
+      new_artists: number
+    }
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -211,6 +423,29 @@ export interface components {
      */
     JobStatus: 'queued' | 'running' | 'done' | 'error'
     /**
+     * LabelCountRow
+     * @description One bar of the tag/genre frequency chart.
+     */
+    LabelCountRow: {
+      /** Label */
+      label: string
+      /** Count */
+      count: number
+    }
+    /**
+     * LabelsResponse
+     * @description Response of ``GET .../insights/labels``; ``field`` echoes which label column was counted.
+     */
+    LabelsResponse: {
+      /**
+       * Field
+       * @enum {string}
+       */
+      field: 'genres' | 'tags'
+      /** Rows */
+      rows: components['schemas']['LabelCountRow'][]
+    }
+    /**
      * MeResponse
      * @description The authenticated Spotify user.
      */
@@ -262,6 +497,50 @@ export interface components {
        * @default false
        */
       force: boolean
+    }
+    /**
+     * ReleaseVsAddedResponse
+     * @description Response of ``GET .../insights/release-vs-added``.
+     */
+    ReleaseVsAddedResponse: {
+      /** Rows */
+      rows: components['schemas']['ReleaseVsAddedRow'][]
+    }
+    /**
+     * ReleaseVsAddedRow
+     * @description One dot of the release-vs-added scatter; ``track_id`` is None for local files (excluded from lasso selections).
+     */
+    ReleaseVsAddedRow: {
+      /** Track Id */
+      track_id: string | null
+      /** Release Year */
+      release_year: number
+      /** Added Year */
+      added_year: number
+      /** Track */
+      track: string
+      /** Artist */
+      artist: string
+    }
+    /**
+     * SeasonalResponse
+     * @description Response of ``GET .../insights/seasonal``.
+     */
+    SeasonalResponse: {
+      /** Rows */
+      rows: components['schemas']['SeasonalRow'][]
+    }
+    /**
+     * SeasonalRow
+     * @description One calendar month of the seasonal-profile chart (always 12 rows).
+     */
+    SeasonalRow: {
+      /** Month */
+      month: number
+      /** Month Name */
+      month_name: string
+      /** Added */
+      added: number
     }
     /**
      * TrackRow
@@ -321,6 +600,24 @@ export interface components {
       input?: unknown
       /** Context */
       ctx?: Record<string, never>
+    }
+    /**
+     * YearCountRow
+     * @description One pre-binned bar of the release-year chart (clicks map to exact years).
+     */
+    YearCountRow: {
+      /** Year */
+      year: number
+      /** Count */
+      count: number
+    }
+    /**
+     * YearsResponse
+     * @description Response of ``GET .../insights/years``.
+     */
+    YearsResponse: {
+      /** Rows */
+      rows: components['schemas']['YearCountRow'][]
     }
   }
   responses: never
@@ -444,6 +741,233 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['TracksResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  labels_api_playlists__playlist_id__insights_labels_get: {
+    parameters: {
+      query?: {
+        field?: 'genres' | 'tags'
+        top_n?: number
+      }
+      header?: never
+      path: {
+        playlist_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LabelsResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  years_api_playlists__playlist_id__insights_years_get: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        playlist_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['YearsResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  additions_api_playlists__playlist_id__insights_additions_get: {
+    parameters: {
+      query?: {
+        freq?: 'W' | 'M' | 'Q' | 'Y'
+      }
+      header?: never
+      path: {
+        playlist_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AdditionsResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  discovery_api_playlists__playlist_id__insights_discovery_get: {
+    parameters: {
+      query?: {
+        freq?: 'W' | 'M' | 'Q' | 'Y'
+      }
+      header?: never
+      path: {
+        playlist_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DiscoveryResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  seasonal_api_playlists__playlist_id__insights_seasonal_get: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        playlist_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SeasonalResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  artists_api_playlists__playlist_id__insights_artists_get: {
+    parameters: {
+      query?: {
+        genre?: string[] | null
+        top_n?: number
+      }
+      header?: never
+      path: {
+        playlist_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ArtistsResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  release_vs_added_api_playlists__playlist_id__insights_release_vs_added_get: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        playlist_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReleaseVsAddedResponse']
         }
       }
       /** @description Validation Error */

@@ -14,6 +14,7 @@ import calendar
 import itertools
 import logging
 from collections import Counter
+from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
@@ -23,12 +24,15 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "additions_over_time",
     "artist_first_seen",
+    "artist_track_counts",
     "collaboration_edges",
     "discovery_waves",
     "genre_cooccurrence",
     "genre_share_over_time",
+    "label_frequencies",
     "release_vs_added",
     "seasonal_profile",
+    "year_counts",
 ]
 
 
@@ -148,6 +152,80 @@ def seasonal_profile(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def label_frequencies(df: pd.DataFrame, *, field: str = "genres", top_n: int = 30) -> pd.DataFrame:
+    """Frequency of the list-valued labels (genres or raw tags) across tracks — the rule-helper bar chart behind "click a genre → tag rule".
+
+    Args:
+        df: Track-level DataFrame with the list-valued ``field`` column.
+        field: Which label column to count — ``"genres"`` (whitelist-filtered) or ``"tags"`` (raw Last.fm).
+        top_n: Number of labels to keep, most frequent first.
+
+    Returns:
+        DataFrame with columns ``label``, ``count``, descending count. Empty (with the right columns) when the column is missing or all-empty.
+    """
+    empty = pd.DataFrame({"label": [], "count": []})
+    if df.empty or field not in df.columns:
+        return empty
+    counts: Counter[str] = Counter(str(label) for cell in df[field] for label in cell)  # pyright: ignore[reportUnknownVariableType] — cell holds a list/ndarray of str
+    rows = counts.most_common(top_n)
+    if not rows:
+        return empty
+    return pd.DataFrame(rows, columns=["label", "count"])
+
+
+def year_counts(df: pd.DataFrame) -> pd.DataFrame:
+    """Tracks per release year, pre-binned server-side so a chart click maps to an exact year.
+
+    Args:
+        df: Track-level DataFrame with a nullable ``release_year`` column.
+
+    Returns:
+        DataFrame with columns ``year`` (int), ``count``, ascending year. Empty (with the right columns) when no track has a usable year.
+    """
+    empty = pd.DataFrame({"year": [], "count": []})
+    if df.empty or "release_year" not in df.columns:
+        return empty
+    years = df["release_year"].dropna().astype(int)
+    if years.empty:
+        return empty
+    counts = years.value_counts().sort_index()
+    return pd.DataFrame({"year": counts.index.to_numpy(), "count": counts.to_numpy()})
+
+
+def artist_track_counts(df: pd.DataFrame, *, genres: Sequence[str] | None = None, top_n: int = 25) -> pd.DataFrame:
+    """Track counts per credited artist, optionally scoped to tracks matching any of the given genres — the cascading "artists within this genre selection" chart.
+
+    All credited artists count, not just the primary one, so a featured artist's presence isn't discarded. Genre matching is case-insensitive.
+
+    Args:
+        df: Track-level DataFrame with parallel list columns ``artist_ids`` / ``artist_names`` and (for scoping) ``genres``.
+        genres: When non-empty, only tracks whose ``genres`` intersect this set participate.
+        top_n: Number of artists to keep, most tracks first.
+
+    Returns:
+        DataFrame with columns ``artist_id``, ``artist_name``, ``track_count``, descending count. Empty (with the right columns) when nothing matches.
+    """
+    empty = pd.DataFrame({"artist_id": [], "artist_name": [], "track_count": []})
+    if df.empty or not {"artist_ids", "artist_names"}.issubset(df.columns):
+        return empty
+    scope = df
+    if genres:
+        if "genres" not in df.columns:
+            return empty
+        wanted = {g.lower() for g in genres}
+        mask = df["genres"].apply(lambda cell: any(str(g).lower() in wanted for g in cell))  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType, reportUnknownLambdaType] — cell holds a list/ndarray of str
+        scope = df[mask]
+    counts: Counter[tuple[str, str]] = Counter()
+    for ids, names in zip(scope["artist_ids"], scope["artist_names"], strict=True):
+        for artist_id, artist_name in zip(ids, names, strict=True):  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType] — cells hold lists/ndarrays of str
+            if artist_id is not None:
+                counts[(str(artist_id), str(artist_name))] += 1
+    rows = [(artist_id, artist_name, count) for (artist_id, artist_name), count in counts.most_common(top_n)]
+    if not rows:
+        return empty
+    return pd.DataFrame(rows, columns=["artist_id", "artist_name", "track_count"])
+
+
 def genre_share_over_time(df: pd.DataFrame, top_n: int = 8, freq: str = "Q") -> pd.DataFrame:
     """Share of each top genre among genre-tagged additions per period — the raw material for a stacked-area "genre evolution" plot.
 
@@ -243,14 +321,14 @@ def release_vs_added(df: pd.DataFrame) -> pd.DataFrame:
     """Pair each track's release year with the year it was added — new-release listening vs back-catalog digging.
 
     Args:
-        df: Track-level DataFrame with ``release_year``, ``added_at``, ``name``, and ``primary_artist_name`` columns.
+        df: Track-level DataFrame with ``track_id``, ``release_year``, ``added_at``, ``name``, and ``primary_artist_name`` columns.
 
     Returns:
-        DataFrame with columns ``release_year`` (int), ``added_year`` (int), ``track``, ``artist`` — one row per track that has both years.
-        Empty (with the right columns) when nothing qualifies.
+        DataFrame with columns ``track_id`` (str, None for local files), ``release_year`` (int), ``added_year`` (int), ``track``, ``artist`` —
+        one row per track that has both years. Empty (with the right columns) when nothing qualifies.
     """
-    empty = pd.DataFrame({"release_year": [], "added_year": [], "track": [], "artist": []})
-    required = {"release_year", "added_at", "name", "primary_artist_name"}
+    empty = pd.DataFrame({"track_id": [], "release_year": [], "added_year": [], "track": [], "artist": []})
+    required = {"track_id", "release_year", "added_at", "name", "primary_artist_name"}
     if df.empty or not required.issubset(df.columns):
         return empty
     valid = df.dropna(subset=["release_year", "added_at"])
@@ -259,6 +337,7 @@ def release_vs_added(df: pd.DataFrame) -> pd.DataFrame:
     added_year = pd.to_datetime(valid["added_at"], errors="coerce", utc=True).dt.year
     return pd.DataFrame(
         {
+            "track_id": valid["track_id"].to_numpy(),
             "release_year": valid["release_year"].astype(int).to_numpy(),
             "added_year": added_year.to_numpy(),
             "track": valid["name"].to_numpy(),
