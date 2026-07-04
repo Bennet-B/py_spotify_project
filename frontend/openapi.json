@@ -557,6 +557,112 @@
         }
       }
     },
+    "/api/organizer/preview": {
+      "post": {
+        "tags": [
+          "organizer"
+        ],
+        "summary": "Preview",
+        "description": "Dry-run the spec against the loaded playlist: bucket contents and stats, nothing written anywhere.\n\nRaises:\n    DatasetNotLoadedError: Mapped to 409 when the playlist has no loaded dataset.\n    ValueError: Mapped to 400 for invalid specs (inverted bounds, duplicate bucket names, ...).",
+        "operationId": "preview_api_organizer_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organizer/apply": {
+      "post": {
+        "tags": [
+          "organizer"
+        ],
+        "summary": "Apply",
+        "description": "Materialize chosen buckets as NEW playlists under a named batch (background job).\n\nValidation happens before the job starts so spec errors surface synchronously; the job then re-runs the pure assignment and performs the\nonly writes in the API: create playlist + add tracks per non-empty bucket. Empty buckets are skipped and reported.\n\nRaises:\n    DatasetNotLoadedError: Mapped to 409 when the playlist has no loaded dataset.\n    ValueError: Mapped to 400 for invalid specs or bucket_names not present in the spec.",
+        "operationId": "apply_api_organizer_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organizer/batches": {
+      "get": {
+        "tags": [
+          "organizer"
+        ],
+        "summary": "Batches",
+        "description": "The local history of Apply batches, newest first.",
+        "operationId": "batches_api_organizer_batches_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{job_id}": {
       "get": {
         "tags": [
@@ -655,6 +761,55 @@
         "title": "AdditionsResponse",
         "description": "Response of ``GET .../insights/additions``."
       },
+      "ApplyRequest": {
+        "properties": {
+          "playlist_id": {
+            "type": "string",
+            "title": "Playlist Id"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/OrganizerSpecIn"
+          },
+          "bucket_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Bucket Names"
+          },
+          "include_rest": {
+            "type": "boolean",
+            "title": "Include Rest",
+            "default": false
+          },
+          "rest_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Rest Name",
+            "default": "Rest"
+          },
+          "public": {
+            "type": "boolean",
+            "title": "Public",
+            "default": false
+          },
+          "batch_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Batch Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "playlist_id",
+          "spec",
+          "bucket_names",
+          "batch_name"
+        ],
+        "title": "ApplyRequest",
+        "description": "Body of ``POST /api/organizer/apply``: which buckets of the spec to materialize, under which batch name."
+      },
       "ArtistCountRow": {
         "properties": {
           "artist_id": {
@@ -678,6 +833,30 @@
         ],
         "title": "ArtistCountRow",
         "description": "One bar of the (optionally genre-scoped) artist chart."
+      },
+      "ArtistRuleIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "artist",
+            "title": "Kind",
+            "default": "artist"
+          },
+          "artist_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Artist Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artist_ids"
+        ],
+        "title": "ArtistRuleIn",
+        "description": "Boundary mirror of ``organizer.ArtistRule``: match any credited artist."
       },
       "ArtistsResponse": {
         "properties": {
@@ -703,6 +882,138 @@
         ],
         "title": "ArtistsResponse",
         "description": "Response of ``GET .../insights/artists``; ``scoped_to_genres`` echoes the cascading genre filter."
+      },
+      "BatchOut": {
+        "properties": {
+          "batch_name": {
+            "type": "string",
+            "title": "Batch Name"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "source_playlist_id": {
+            "type": "string",
+            "title": "Source Playlist Id"
+          },
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/CreatedPlaylistOut"
+            },
+            "type": "array",
+            "title": "Created"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_name",
+          "created_at",
+          "source_playlist_id",
+          "created"
+        ],
+        "title": "BatchOut",
+        "description": "One recorded Apply batch."
+      },
+      "BatchesResponse": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/BatchOut"
+            },
+            "type": "array",
+            "title": "Batches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batches"
+        ],
+        "title": "BatchesResponse",
+        "description": "Response of ``GET /api/organizer/batches``, newest first."
+      },
+      "BucketPreview": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "duration_ms_total": {
+            "type": "integer",
+            "title": "Duration Ms Total"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Track Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "count",
+          "duration_ms_total",
+          "track_ids"
+        ],
+        "title": "BucketPreview",
+        "description": "One bucket's dry-run result."
+      },
+      "BucketSpecIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleIn"
+            },
+            "type": "array",
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "BucketSpecIn",
+        "description": "One named bucket; rules AND together."
+      },
+      "CreatedPlaylistOut": {
+        "properties": {
+          "bucket_name": {
+            "type": "string",
+            "title": "Bucket Name"
+          },
+          "playlist_id": {
+            "type": "string",
+            "title": "Playlist Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "added": {
+            "type": "integer",
+            "title": "Added"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket_name",
+          "playlist_id",
+          "url",
+          "added"
+        ],
+        "title": "CreatedPlaylistOut",
+        "description": "One playlist created by an Apply."
       },
       "DiscoveryResponse": {
         "properties": {
@@ -745,6 +1056,41 @@
         ],
         "title": "DiscoveryRow",
         "description": "One period of the artist-discovery-waves chart."
+      },
+      "DurationRuleIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "duration",
+            "title": "Kind",
+            "default": "duration"
+          },
+          "min_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Seconds"
+          },
+          "max_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Seconds"
+          }
+        },
+        "type": "object",
+        "title": "DurationRuleIn",
+        "description": "Boundary mirror of ``organizer.DurationRule`` (whole seconds)."
       },
       "HTTPValidationError": {
         "properties": {
@@ -969,6 +1315,49 @@
         "title": "MeResponse",
         "description": "The authenticated Spotify user."
       },
+      "OrganizerSpecIn": {
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/BucketSpecIn"
+            },
+            "type": "array",
+            "title": "Buckets"
+          },
+          "allow_duplicates": {
+            "type": "boolean",
+            "title": "Allow Duplicates",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "OrganizerSpecIn",
+        "description": "The organizer configuration as sent by the frontend."
+      },
+      "OverlapOut": {
+        "properties": {
+          "bucket_a": {
+            "type": "string",
+            "title": "Bucket A"
+          },
+          "bucket_b": {
+            "type": "string",
+            "title": "Bucket B"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket_a",
+          "bucket_b",
+          "count"
+        ],
+        "title": "OverlapOut",
+        "description": "Tracks shared by two buckets."
+      },
       "PlaylistItem": {
         "properties": {
           "id": {
@@ -1050,6 +1439,90 @@
         "title": "PlaylistsResponse",
         "description": "Response of ``GET /api/playlists``."
       },
+      "PreviewRequest": {
+        "properties": {
+          "playlist_id": {
+            "type": "string",
+            "title": "Playlist Id"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/OrganizerSpecIn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "playlist_id",
+          "spec"
+        ],
+        "title": "PreviewRequest",
+        "description": "Body of ``POST /api/organizer/preview``."
+      },
+      "PreviewResponse": {
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/BucketPreview"
+            },
+            "type": "array",
+            "title": "Buckets"
+          },
+          "rest_track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rest Track Ids"
+          },
+          "rest_count": {
+            "type": "integer",
+            "title": "Rest Count"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/PreviewStats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "buckets",
+          "rest_track_ids",
+          "rest_count",
+          "stats"
+        ],
+        "title": "PreviewResponse",
+        "description": "Response of ``POST /api/organizer/preview`` \u2014 a pure dry-run, nothing written."
+      },
+      "PreviewStats": {
+        "properties": {
+          "coverage_pct": {
+            "type": "number",
+            "title": "Coverage Pct"
+          },
+          "duplicate_count": {
+            "type": "integer",
+            "title": "Duplicate Count"
+          },
+          "overlaps": {
+            "items": {
+              "$ref": "#/components/schemas/OverlapOut"
+            },
+            "type": "array",
+            "title": "Overlaps"
+          },
+          "skipped_local_count": {
+            "type": "integer",
+            "title": "Skipped Local Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "coverage_pct",
+          "duplicate_count",
+          "overlaps",
+          "skipped_local_count"
+        ],
+        "title": "PreviewStats",
+        "description": "Aggregate dry-run numbers."
+      },
       "RefreshRequest": {
         "properties": {
           "force": {
@@ -1120,6 +1593,35 @@
         "title": "ReleaseVsAddedRow",
         "description": "One dot of the release-vs-added scatter; ``track_id`` is None for local files (excluded from lasso selections)."
       },
+      "RuleIn": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TagRuleIn"
+          },
+          {
+            "$ref": "#/components/schemas/YearRuleIn"
+          },
+          {
+            "$ref": "#/components/schemas/DurationRuleIn"
+          },
+          {
+            "$ref": "#/components/schemas/ArtistRuleIn"
+          },
+          {
+            "$ref": "#/components/schemas/TrackRuleIn"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "artist": "#/components/schemas/ArtistRuleIn",
+            "duration": "#/components/schemas/DurationRuleIn",
+            "tag": "#/components/schemas/TagRuleIn",
+            "track": "#/components/schemas/TrackRuleIn",
+            "year": "#/components/schemas/YearRuleIn"
+          }
+        }
+      },
       "SeasonalResponse": {
         "properties": {
           "rows": {
@@ -1160,6 +1662,39 @@
         ],
         "title": "SeasonalRow",
         "description": "One calendar month of the seasonal-profile chart (always 12 rows)."
+      },
+      "TagRuleIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "tag",
+            "title": "Kind",
+            "default": "tag"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Labels"
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "genres",
+              "tags"
+            ],
+            "title": "Field",
+            "default": "genres"
+          }
+        },
+        "type": "object",
+        "required": [
+          "labels"
+        ],
+        "title": "TagRuleIn",
+        "description": "Boundary mirror of ``organizer.TagRule``: match any of the labels (case-insensitive) in the chosen field."
       },
       "TrackRow": {
         "properties": {
@@ -1281,6 +1816,30 @@
         "title": "TrackRow",
         "description": "One flattened track, mirroring the columns of ``PlaylistAnalyzer.from_playlist``'s DataFrame."
       },
+      "TrackRuleIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "track",
+            "title": "Kind",
+            "default": "track"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Track Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "track_ids"
+        ],
+        "title": "TrackRuleIn",
+        "description": "Boundary mirror of ``organizer.TrackRule``: an explicit track-id set (the lasso selection)."
+      },
       "TracksResponse": {
         "properties": {
           "playlist_id": {
@@ -1366,6 +1925,41 @@
         ],
         "title": "YearCountRow",
         "description": "One pre-binned bar of the release-year chart (clicks map to exact years)."
+      },
+      "YearRuleIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "year",
+            "title": "Kind",
+            "default": "year"
+          },
+          "min_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Year"
+          },
+          "max_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Year"
+          }
+        },
+        "type": "object",
+        "title": "YearRuleIn",
+        "description": "Boundary mirror of ``organizer.YearRule``; bound validation happens in the core dataclass."
       },
       "YearsResponse": {
         "properties": {

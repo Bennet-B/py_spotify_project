@@ -1,7 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import type { components } from './types.gen'
 import { useWorkbenchStore } from '../state/store'
+import type { OrganizerSpecIn } from '../state/store'
+import { useDebouncedValue } from '../lib/useDebouncedValue'
 
 export type PlaylistItem = components['schemas']['PlaylistItem']
 export type JobOut = components['schemas']['JobOut']
@@ -135,6 +137,69 @@ export function useReleaseVsAdded(playlistId: string) {
     queryKey: ['insights', playlistId, 'release-vs-added'],
     queryFn: async () => {
       const { data, error } = await api.GET('/api/playlists/{playlist_id}/insights/release-vs-added', { params: { path: { playlist_id: playlistId } } })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+export type PreviewResponse = components['schemas']['PreviewResponse']
+export type ApplyRequest = components['schemas']['ApplyRequest']
+
+/** Debounced live dry-run of the organizer spec; keeps the previous preview visible while the next one computes. */
+export function usePreview(playlistId: string | null, spec: OrganizerSpecIn) {
+  const specJson = useDebouncedValue(JSON.stringify(spec), 400)
+  return useQuery({
+    queryKey: ['preview', playlistId, specJson],
+    enabled: playlistId !== null && spec.buckets.length > 0,
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const { data, error } = await api.POST('/api/organizer/preview', { body: { playlist_id: playlistId!, spec: JSON.parse(specJson) as OrganizerSpecIn } })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+/** Start an Apply job (the only mutating call in the API). */
+export function useApply() {
+  return useMutation({
+    mutationFn: async (request: ApplyRequest) => {
+      const { data, error } = await api.POST('/api/organizer/apply', { body: request })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+/** Poll any job by id until terminal; on completion, refetch the batch history and sidebar. */
+export function useJobById(jobId: string | null) {
+  const queryClient = useQueryClient()
+  return useQuery({
+    queryKey: ['job', jobId],
+    enabled: jobId !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'done' || status === 'error' ? false : JOB_POLL_INTERVAL_MS
+    },
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/jobs/{job_id}', { params: { path: { job_id: jobId! } } })
+      if (error) throw error
+      if (data.status === 'done') {
+        void queryClient.invalidateQueries({ queryKey: ['batches'] })
+        void queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      }
+      return data
+    },
+  })
+}
+
+/** The local history of Apply batches. */
+export function useBatches() {
+  return useQuery({
+    queryKey: ['batches'],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/organizer/batches')
       if (error) throw error
       return data
     },

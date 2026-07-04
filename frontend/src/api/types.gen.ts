@@ -252,6 +252,77 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/organizer/preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Preview
+     * @description Dry-run the spec against the loaded playlist: bucket contents and stats, nothing written anywhere.
+     *
+     *     Raises:
+     *         DatasetNotLoadedError: Mapped to 409 when the playlist has no loaded dataset.
+     *         ValueError: Mapped to 400 for invalid specs (inverted bounds, duplicate bucket names, ...).
+     */
+    post: operations['preview_api_organizer_preview_post']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/organizer/apply': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Apply
+     * @description Materialize chosen buckets as NEW playlists under a named batch (background job).
+     *
+     *     Validation happens before the job starts so spec errors surface synchronously; the job then re-runs the pure assignment and performs the
+     *     only writes in the API: create playlist + add tracks per non-empty bucket. Empty buckets are skipped and reported.
+     *
+     *     Raises:
+     *         DatasetNotLoadedError: Mapped to 409 when the playlist has no loaded dataset.
+     *         ValueError: Mapped to 400 for invalid specs or bucket_names not present in the spec.
+     */
+    post: operations['apply_api_organizer_apply_post']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/organizer/batches': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Batches
+     * @description The local history of Apply batches, newest first.
+     */
+    get: operations['batches_api_organizer_batches_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/jobs/{job_id}': {
     parameters: {
       query?: never
@@ -307,6 +378,34 @@ export interface components {
       rows: components['schemas']['AdditionRow'][]
     }
     /**
+     * ApplyRequest
+     * @description Body of ``POST /api/organizer/apply``: which buckets of the spec to materialize, under which batch name.
+     */
+    ApplyRequest: {
+      /** Playlist Id */
+      playlist_id: string
+      spec: components['schemas']['OrganizerSpecIn']
+      /** Bucket Names */
+      bucket_names: string[]
+      /**
+       * Include Rest
+       * @default false
+       */
+      include_rest: boolean
+      /**
+       * Rest Name
+       * @default Rest
+       */
+      rest_name: string
+      /**
+       * Public
+       * @default false
+       */
+      public: boolean
+      /** Batch Name */
+      batch_name: string
+    }
+    /**
      * ArtistCountRow
      * @description One bar of the (optionally genre-scoped) artist chart.
      */
@@ -319,6 +418,19 @@ export interface components {
       track_count: number
     }
     /**
+     * ArtistRuleIn
+     * @description Boundary mirror of ``organizer.ArtistRule``: match any credited artist.
+     */
+    ArtistRuleIn: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: 'artist'
+      /** Artist Ids */
+      artist_ids: string[]
+    }
+    /**
      * ArtistsResponse
      * @description Response of ``GET .../insights/artists``; ``scoped_to_genres`` echoes the cascading genre filter.
      */
@@ -327,6 +439,66 @@ export interface components {
       scoped_to_genres: string[]
       /** Rows */
       rows: components['schemas']['ArtistCountRow'][]
+    }
+    /**
+     * BatchOut
+     * @description One recorded Apply batch.
+     */
+    BatchOut: {
+      /** Batch Name */
+      batch_name: string
+      /** Created At */
+      created_at: string
+      /** Source Playlist Id */
+      source_playlist_id: string
+      /** Created */
+      created: components['schemas']['CreatedPlaylistOut'][]
+    }
+    /**
+     * BatchesResponse
+     * @description Response of ``GET /api/organizer/batches``, newest first.
+     */
+    BatchesResponse: {
+      /** Batches */
+      batches: components['schemas']['BatchOut'][]
+    }
+    /**
+     * BucketPreview
+     * @description One bucket's dry-run result.
+     */
+    BucketPreview: {
+      /** Name */
+      name: string
+      /** Count */
+      count: number
+      /** Duration Ms Total */
+      duration_ms_total: number
+      /** Track Ids */
+      track_ids: string[]
+    }
+    /**
+     * BucketSpecIn
+     * @description One named bucket; rules AND together.
+     */
+    BucketSpecIn: {
+      /** Name */
+      name: string
+      /** Rules */
+      rules?: components['schemas']['RuleIn'][]
+    }
+    /**
+     * CreatedPlaylistOut
+     * @description One playlist created by an Apply.
+     */
+    CreatedPlaylistOut: {
+      /** Bucket Name */
+      bucket_name: string
+      /** Playlist Id */
+      playlist_id: string
+      /** Url */
+      url: string
+      /** Added */
+      added: number
     }
     /**
      * DiscoveryResponse
@@ -350,6 +522,21 @@ export interface components {
       period: string
       /** New Artists */
       new_artists: number
+    }
+    /**
+     * DurationRuleIn
+     * @description Boundary mirror of ``organizer.DurationRule`` (whole seconds).
+     */
+    DurationRuleIn: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: 'duration'
+      /** Min Seconds */
+      min_seconds?: number | null
+      /** Max Seconds */
+      max_seconds?: number | null
     }
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -456,6 +643,31 @@ export interface components {
       display_name: string
     }
     /**
+     * OrganizerSpecIn
+     * @description The organizer configuration as sent by the frontend.
+     */
+    OrganizerSpecIn: {
+      /** Buckets */
+      buckets?: components['schemas']['BucketSpecIn'][]
+      /**
+       * Allow Duplicates
+       * @default true
+       */
+      allow_duplicates: boolean
+    }
+    /**
+     * OverlapOut
+     * @description Tracks shared by two buckets.
+     */
+    OverlapOut: {
+      /** Bucket A */
+      bucket_a: string
+      /** Bucket B */
+      bucket_b: string
+      /** Count */
+      count: number
+    }
+    /**
      * PlaylistItem
      * @description One sidebar entry; id ``__liked__`` is the synthetic Liked Songs pseudo-playlist.
      *
@@ -486,6 +698,42 @@ export interface components {
     PlaylistsResponse: {
       /** Items */
       items: components['schemas']['PlaylistItem'][]
+    }
+    /**
+     * PreviewRequest
+     * @description Body of ``POST /api/organizer/preview``.
+     */
+    PreviewRequest: {
+      /** Playlist Id */
+      playlist_id: string
+      spec: components['schemas']['OrganizerSpecIn']
+    }
+    /**
+     * PreviewResponse
+     * @description Response of ``POST /api/organizer/preview`` — a pure dry-run, nothing written.
+     */
+    PreviewResponse: {
+      /** Buckets */
+      buckets: components['schemas']['BucketPreview'][]
+      /** Rest Track Ids */
+      rest_track_ids: string[]
+      /** Rest Count */
+      rest_count: number
+      stats: components['schemas']['PreviewStats']
+    }
+    /**
+     * PreviewStats
+     * @description Aggregate dry-run numbers.
+     */
+    PreviewStats: {
+      /** Coverage Pct */
+      coverage_pct: number
+      /** Duplicate Count */
+      duplicate_count: number
+      /** Overlaps */
+      overlaps: components['schemas']['OverlapOut'][]
+      /** Skipped Local Count */
+      skipped_local_count: number
     }
     /**
      * RefreshRequest
@@ -522,6 +770,12 @@ export interface components {
       /** Artist */
       artist: string
     }
+    RuleIn:
+      | components['schemas']['TagRuleIn']
+      | components['schemas']['YearRuleIn']
+      | components['schemas']['DurationRuleIn']
+      | components['schemas']['ArtistRuleIn']
+      | components['schemas']['TrackRuleIn']
     /**
      * SeasonalResponse
      * @description Response of ``GET .../insights/seasonal``.
@@ -541,6 +795,25 @@ export interface components {
       month_name: string
       /** Added */
       added: number
+    }
+    /**
+     * TagRuleIn
+     * @description Boundary mirror of ``organizer.TagRule``: match any of the labels (case-insensitive) in the chosen field.
+     */
+    TagRuleIn: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: 'tag'
+      /** Labels */
+      labels: string[]
+      /**
+       * Field
+       * @default genres
+       * @enum {string}
+       */
+      field: 'genres' | 'tags'
     }
     /**
      * TrackRow
@@ -577,6 +850,19 @@ export interface components {
       genres: string[]
     }
     /**
+     * TrackRuleIn
+     * @description Boundary mirror of ``organizer.TrackRule``: an explicit track-id set (the lasso selection).
+     */
+    TrackRuleIn: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: 'track'
+      /** Track Ids */
+      track_ids: string[]
+    }
+    /**
      * TracksResponse
      * @description Response of ``GET /api/playlists/{id}/tracks``.
      */
@@ -610,6 +896,21 @@ export interface components {
       year: number
       /** Count */
       count: number
+    }
+    /**
+     * YearRuleIn
+     * @description Boundary mirror of ``organizer.YearRule``; bound validation happens in the core dataclass.
+     */
+    YearRuleIn: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: 'year'
+      /** Min Year */
+      min_year?: number | null
+      /** Max Year */
+      max_year?: number | null
     }
     /**
      * YearsResponse
@@ -977,6 +1278,92 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  preview_api_organizer_preview_post: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PreviewRequest']
+      }
+    }
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PreviewResponse']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  apply_api_organizer_apply_post: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApplyRequest']
+      }
+    }
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['JobAccepted']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  batches_api_organizer_batches_get: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BatchesResponse']
         }
       }
     }

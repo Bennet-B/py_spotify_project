@@ -15,6 +15,7 @@ from fastapi import Depends
 from ..cache import FileCache
 from ..client import SpotifyClient
 from ..lastfm_client import LastFmClient
+from .batches import BatchStore
 from .dataset import DatasetStore
 from .jobs import JobRegistry
 
@@ -47,7 +48,14 @@ def get_dataset_store() -> DatasetStore:
     return DatasetStore()
 
 
+@lru_cache(maxsize=1)
+def get_batch_store() -> BatchStore:
+    """Return the local Apply-batch history store."""
+    return BatchStore()
+
+
 CacheDep = Annotated[FileCache, Depends(get_cache)]
+BatchStoreDep = Annotated[BatchStore, Depends(get_batch_store)]
 ClientDep = Annotated[SpotifyClient, Depends(get_client)]
 JobRegistryDep = Annotated[JobRegistry, Depends(get_job_registry)]
 DatasetStoreDep = Annotated[DatasetStore, Depends(get_dataset_store)]
