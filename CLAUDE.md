@@ -8,7 +8,9 @@ Phase 1 (done, course scope): A Jupyter notebook that authenticates as a Spotify
 
 Phase 1.5 (done): richer notebook analytics — temporal analysis (library growth, artist discovery waves, seasonal trends), distribution views (KDE, ECDF, violin/box), release-year vs added-year, network visualizations (artist collaborations, genre similarity), first interactive Plotly charts. Computations live in `src/spotify_project/insights.py`; rendering stays in the notebook.
 
-Phase 2 (current, planned jointly): A small web UI to do the same analyses interactively, plus mutations — create / split / merge / re-sort / dedupe / re-tag playlists. A "playlist organizer" tool: split a source playlist / liked songs into genre- or vibe-matching buckets. **Framework and scope are decided together with the user in a dedicated planning session (Claude presents options, user decides) — no Phase 2 code before that decision.**
+Phase 2 (current, decided jointly 2026-07-04): a **FastAPI + React workbench** — analytics and playlist organizing in one UI where charts are also the rule-authoring surface (click a genre bar → tag filter on a bucket; drag a year range → year rule; lasso the release-vs-added scatter → playlist from selection; genre selections re-scope an artist chart). Product decisions: organizer works on **rules with a live dry-run preview** (no track-level drag-and-drop; artist-level drag is an M4+ stretch); Apply always **creates new playlists grouped as a named batch** (name prefix + description marker — the Spotify API has no folder support); analysis scope (sources vs existing sub-playlists) is **user-selected**; suggest-split proposes an even bucket layout with a duplication-tolerance parameter; set-analysis covers overlap/subsets, track-in-N-playlists stats, and an unorganized-tracks report with optional placeholder-playlist sweep. Local single-user now; `web/deps.py` is the seam for a hosted multi-user version later (per-user OAuth + cache roots) — designed for, not built.
+
+Milestones (one PR each, reviewed by Bennet): **M0 walking skeleton (done)** → **M1 explore workbench** (insights endpoints, Plotly charts, selection→rule chips) → **M2 organizer** (rule engine, preview/apply, mutation scopes) → **M3 set-analysis + suggest-split**. Hard rule: all Phase 2 logic lives in framework-free, tested core modules (like `insights.py`); pydantic exists only at the API boundary (`web/schemas.py`); the OpenAPI schema is the source of truth for generated frontend types.
 
 ## Course requirements (satisfied — kept because they explain the code's shape)
 
@@ -35,7 +37,8 @@ Deliverables: Git repo with `src/`, `notebooks/`, `tests/`, README. Final presen
 - `plotly` + `networkx` + `scipy` — notebook-side visualization (Phase 1.5): interactive charts, graph layouts, seaborn's KDE backend
 - `pytest` — tests
 - `jupyter` / `ipykernel` — for the notebook
-- (Phase 2) `streamlit` or `fastapi` + minimal HTML — TBD
+- (Phase 2) `fastapi` + `uvicorn` + `pydantic` — web API layer in `src/spotify_project/web/`; the core stays on dataclasses, pydantic models exist only at the boundary
+- (Phase 2) `frontend/` — Vite + React 19 + TypeScript 5.9 (pinned `~5.9`: `openapi-typescript` requires TS ^5.x), Tailwind 4, TanStack Query, Zustand, `openapi-fetch`; oxlint (Vite scaffold default) + prettier + vitest. Plotly.js lands in M1.
 
 ## Commands
 
@@ -48,6 +51,14 @@ ruff check                                      # lint
 ruff format                                     # format
 pyright                                         # type check (strict)
 jupyter notebook notebooks/01_explore_playlist.ipynb
+
+# Phase 2 web app (one-time setup: pip install -e . ; cd frontend && npm install)
+.venv/Scripts/python.exe -m uvicorn spotify_project.web.app:create_app --factory   # API on 127.0.0.1:8000
+cd frontend && npm run dev                     # UI on localhost:5173, proxies /api to :8000
+cd frontend && npm test                        # vitest
+cd frontend && npm run build                   # tsc + vite production build
+# After changing web/schemas.py or any route signature — regenerate the TS types:
+.venv/Scripts/python.exe scripts/export_openapi.py && cd frontend && npm run gen:api
 ```
 
 ## Spotify API gotchas — IMPORTANT
@@ -61,6 +72,7 @@ The Spotify Web API was significantly cut down in late 2024 / early 2026. Read t
 5. **Pagination is required.** Most list endpoints cap at 50–100 items. Use spotipy's `sp.next(results)` loop.
 6. **Rate limiting:** 429 with `Retry-After` header. spotipy's session handles backoff but be defensive.
 7. **`/v1/...` endpoints are being migrated.** Prefer the spotipy method (e.g. `sp.playlist_items`) over hand-rolled URLs — the library tracks these.
+8. **No playlist-folder API.** Folders are a Spotify-client-only feature, never exposed to third-party apps. Grouping of app-created playlists therefore uses a batch name prefix + description marker (M2); moving them into an actual folder stays a manual step in the Spotify client.
 
 ## Authentication
 
@@ -92,21 +104,39 @@ py_spotify_project/
 │   └── superpowers/
 │       ├── specs/             # active design specs (Phase 1 design, Last.fm enrichment)
 │       └── archive/           # superseded sprint plans + specs (historical)
+├── scripts/
+│   └── export_openapi.py      # dumps the OpenAPI schema to frontend/openapi.json for TS codegen
 ├── src/
 │   └── spotify_project/
 │       ├── __init__.py
 │       ├── analyzer.py        # Analyzer (ABC) + 6 subclasses + PlaylistAnalyzer orchestrator
 │       ├── cache.py           # FileCache — file-based JSON cache with TTL, atomic writes
-│       ├── client.py          # SpotifyClient — auth, fetch, retry, pagination
+│       ├── client.py          # SpotifyClient — auth, fetch, retry, pagination, progress callbacks
 │       ├── genre_taxonomy.py  # GENRE_WHITELIST + filter_to_genres
 │       ├── insights.py        # pure plot-ready computations behind notebook sections 7-11
 │       ├── lastfm_client.py   # LastFmClient — optional Last.fm tag enrichment
 │       ├── logging_setup.py   # RedactAuthFilter + TqdmLoggingHandler
-│       └── models.py          # @dataclass Track, Playlist, Artist, User, PlaylistSummary
+│       ├── models.py          # @dataclass Track, Playlist, Artist, User, PlaylistSummary
+│       └── web/               # Phase 2 FastAPI layer (framework code lives ONLY here)
+│           ├── app.py         # create_app factory (uvicorn --factory entry point)
+│           ├── deps.py        # DI providers — the multi-user seam
+│           ├── schemas.py     # pydantic boundary models (OpenAPI source of truth)
+│           ├── errors.py      # uniform {"error": {code, message, detail}} envelope
+│           ├── jobs.py        # JobRegistry — thread-pool background jobs + progress
+│           ├── dataset.py     # DatasetStore — in-memory playlist -> DataFrame map
+│           └── routers/       # system, playlists, jobs (M1+: insights, organizer, analysis)
+├── frontend/                  # Vite + React + TS workbench UI
+│   └── src/
+│       ├── api/               # openapi-fetch client + generated types.gen.ts + query hooks
+│       ├── state/store.ts     # zustand store (selection, running jobs; M1+: chart selections, rules)
+│       ├── components/        # Sidebar, ProgressBar
+│       ├── features/library/  # TrackTable
+│       └── lib/               # small utils + vitest tests
 ├── notebooks/
 │   └── 01_explore_playlist.ipynb
 └── tests/
     ├── test_analyzer.py
+    ├── test_architecture.py      # core modules must not import web frameworks
     ├── test_cache.py
     ├── test_client.py            # mocked spotipy
     ├── test_insights.py
@@ -114,7 +144,10 @@ py_spotify_project/
     ├── test_lastfm_client.py
     ├── test_logging_setup.py
     ├── test_models.py
-    └── test_playlist_analyzer.py
+    ├── test_playlist_analyzer.py
+    └── web/                      # TestClient API tests with a fake SpotifyClient
+        ├── test_jobs.py
+        └── test_playlists_api.py
 ```
 
 ## Style anchors
@@ -127,7 +160,9 @@ py_spotify_project/
 
 ## Deferred decisions
 
-- **Phase 2 web UI — framework AND scope:** to be decided **jointly with the user** in a dedicated planning session (Claude presents options, user decides). Candidates: Streamlit (very fast, pure Python) vs FastAPI + small HTML/JS frontend (more work, more "real-world" stack). Scope questions: which analyses go interactive, how far the playlist organizer goes (given no audio features, "vibe" must derive from Last.fm tags + release year + artist data), and the dry-run/review UX before any playlist mutation.
+- **M4+ stretch goals (design for, don't build):** artist-level drag-and-drop between buckets (dnd-kit), re-apply/update of previously created batches, multi-source organizer (union of several source playlists).
+- **Hosted multi-user mode:** per-session OAuth (auth-code endpoints instead of the local browser flow), per-user token storage and `FileCache` roots, user-scoped `DatasetStore`/`JobRegistry`. The seam is `web/deps.py`; nothing else may construct clients or caches.
+- **Notebook plot caveats:** user has minor caveats about some Phase 1.5 plots — collect and address in a later notebook pass (also informs which chart variants M1 ports).
 
 ## Reference materials in this repo
 
@@ -148,4 +183,5 @@ The entire `docs/` directory is **gitignored** — these are local working notes
 - 2026-05-13: Last.fm enrichment merged to `main` via PR #1. Test suite restructured around per-module files (`test_playlist_analyzer.py` split out from `test_analyzer.py`; added `test_logging_setup.py`, `test_genre_taxonomy.py`, `test_cache.py`, `test_lastfm_client.py`). `.gitignore` cleaned up — `docs/` is now explicitly local-only. Phase 1 implementation effectively complete; remaining work is documentation polish, README slim-down, and final presentation prep.
 - 2026-07-02: Course submitted and graded-state frozen at tag `v1.0-prog2`. Project continues as a personal tool. Post-course cleanup pass (`chore/post-course-cleanup`): full codebase review, superseded planning docs moved to `docs/superpowers/archive/`, CLAUDE.md re-scoped. Next: notebook visualization upgrade (Phase 1.5), then a joint planning session for the Phase 2 web UI (framework + scope decided together with the user).
 - 2026-07-03: Cleanup merged (PR #2 — incl. review fixes: empty-tags cache semantics pinned by test, release-year plausibility floor relaxed to 1860). Phase 1.5 notebook viz upgrade merged (PR #4; PR #3 was auto-closed by GitHub when its stacked base branch was deleted — same content). `insights.py` + tests added; notebook sections 7-11 executed and verified against the live library. 142 tests green.
-- 2026-07-04: User has minor caveats about some of the new plots — to be collected and addressed in a later notebook pass (not blocking). Next session: Phase 2 web UI planning (options presented, decided jointly).
+- 2026-07-04: User has minor caveats about some of the new plots — to be collected and addressed in a later notebook pass (not blocking).
+- 2026-07-04: Phase 2 planning session held (product-first: end-product shape decided before technology). Decisions: FastAPI + React workbench, chart-selections-become-rules, batch-grouped create-only Apply, user-selected analysis scope, suggest-split with duplication tolerance, build order M0→M3 (see Goal section). M0 walking skeleton implemented on `feature/phase2-m0-skeleton`: `web/` package (app factory, DI seam, error envelope, thread-pool JobRegistry, DatasetStore, playlists/jobs/system routers), `on_progress` callback in `client.py` (tqdm untouched when unset), `FileCache.cached_at`, OpenAPI→TS codegen pipeline, React sidebar + refresh-with-progress + track table. Verified live end-to-end (3853-track Liked Songs through refresh job → tracks endpoint → Vite proxy). 158 backend tests + 4 vitest tests green, pyright/ruff clean, `npm run build` clean.
