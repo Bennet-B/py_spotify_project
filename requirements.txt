@@ -12,9 +12,13 @@ tqdm>=4.66
 plotly>=6,<7
 networkx>=3.3,<4
 scipy>=1.13
+fastapi>=0.139,<1
+uvicorn[standard]>=0.49,<1
+pydantic>=2.13,<3
 
 # Dev
 pytest>=8.0,<9
 ruff>=0.5
 pyright>=1.1.350
 pandas-stubs>=2.2
+httpx2>=2.5,<3

@@ -450,3 +450,57 @@ class TestRateLimitHandling:
         with pytest.raises(SpotifyException) as excinfo:
             client.fetch_artists(["a1"])
         assert excinfo.value.http_status == 500  # pyright: ignore[reportUnknownMemberType]
+
+
+class TestProgressCallback:
+    """Tests for the on_progress callback threading through the fetch methods."""
+
+    def test_fetch_artists_reports_per_artist_progress(self, tmp_path: Path) -> None:
+        """With on_progress set, fetch_artists fires ("artists", i, total) per artist instead of showing a tqdm bar."""
+        cache = FileCache(root=tmp_path)
+        fake_sp = MagicMock()
+        fake_sp.artist.side_effect = [{"id": aid, "name": f"Artist {aid}"} for aid in ("a1", "a2", "a3")]
+        events: list[tuple[str, int, int | None]] = []
+
+        client = SpotifyClient(sp=fake_sp, cache=cache)
+        with patch("spotify_project.client.time.sleep"):
+            artists = client.fetch_artists(["a1", "a2", "a3"], on_progress=lambda phase, done, total: events.append((phase, done, total)))
+
+        assert len(artists) == 3
+        assert events == [("artists", 1, 3), ("artists", 2, 3), ("artists", 3, 3)]
+
+    def test_fetch_playlist_reports_track_pagination_progress(self, tmp_path: Path) -> None:
+        """fetch_playlist reports the "tracks" phase (total unknown) per page, then the "artists" phase."""
+        cache = FileCache(root=tmp_path)
+        fake_sp = MagicMock()
+        fake_sp.playlist.return_value = {
+            "id": "pl1",
+            "name": "Test PL",
+            "owner": {"display_name": "Bennet"},
+            "public": True,
+            "collaborative": False,
+            "description": "",
+            "items": {"items": [_track_item(i) for i in range(100)], "next": "next_url"},
+        }
+        fake_sp.next.side_effect = [{"items": [_track_item(i) for i in range(100, 150)], "next": None}]
+        fake_sp.artist.return_value = {"id": "a1", "name": "Artist 1"}
+        events: list[tuple[str, int, int | None]] = []
+
+        client = SpotifyClient(sp=fake_sp, cache=cache)
+        with patch("spotify_project.client.time.sleep"):
+            playlist = client.fetch_playlist("pl1", on_progress=lambda phase, done, total: events.append((phase, done, total)))
+
+        assert len(playlist.tracks) == 150
+        assert events[:2] == [("tracks", 100, None), ("tracks", 150, None)]
+        assert events[2:] == [("artists", 1, 1)]
+
+    def test_no_callback_keeps_tqdm_path(self, tmp_path: Path) -> None:
+        """Without on_progress, fetch_artists still wraps the loop in tqdm (the notebook behavior stays untouched)."""
+        cache = FileCache(root=tmp_path)
+        fake_sp = MagicMock()
+        fake_sp.artist.return_value = {"id": "a1", "name": "Artist 1"}
+
+        client = SpotifyClient(sp=fake_sp, cache=cache)
+        with patch("spotify_project.client._tqdm_cls", side_effect=lambda it, **kwargs: it) as tqdm_mock, patch("spotify_project.client.time.sleep"):  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+            client.fetch_artists(["a1"])
+        tqdm_mock.assert_called_once()

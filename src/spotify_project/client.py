@@ -21,6 +21,10 @@ from .models import Artist, Playlist, PlaylistSummary, Track, User
 
 logger = logging.getLogger(__name__)
 
+# Progress callback contract for the fetch methods: ``(phase, done, total)``. ``total`` is None while it is unknown (e.g. mid-pagination).
+# Callers that pass a callback (the web layer's job runner) get per-item updates instead of tqdm bars; ``None`` keeps the tqdm behavior for notebook use.
+type ProgressFn = Callable[[str, int, int | None], None]
+
 
 class SpotifyClient:
     """Authenticated Spotify Web API client with caching and pagination.
@@ -256,7 +260,7 @@ class SpotifyClient:
             for p in raw
         ]
 
-    def fetch_playlist(self, playlist_id: str, *, force_refresh: bool = False) -> Playlist:
+    def fetch_playlist(self, playlist_id: str, *, force_refresh: bool = False, on_progress: ProgressFn | None = None) -> Playlist:
         """Fetch a playlist by ID, fully enriched with Artist objects.
 
         Two-phase: paginated track fetch, then a batched artist fetch for unique artist IDs across all tracks.
@@ -266,6 +270,7 @@ class SpotifyClient:
         Args:
             playlist_id: Spotify playlist ID.
             force_refresh: Skip the cache and refetch from the API.
+            on_progress: Optional ``(phase, done, total)`` callback; phases are ``"tracks"`` (total unknown), ``"artists"``, and ``"lastfm_tags"``. When None, the artist loops show tqdm bars instead.
 
         Returns:
             A fully-enriched Playlist.
@@ -282,9 +287,13 @@ class SpotifyClient:
                 raise ValueError(f"Playlist {playlist_id} [Owner: {owner_name}, Name: {playlist_name}] returned no track details.")
             track_items: list[dict[str, Any]] = list(data["items"]["items"])
             page: dict[str, Any] = data["items"]
+            if on_progress is not None:
+                on_progress("tracks", len(track_items), None)
             while page.get("next"):
                 page = self._sp_next(page)
                 track_items.extend(page["items"])
+                if on_progress is not None:
+                    on_progress("tracks", len(track_items), None)
             data["items"]["items"] = track_items
             data["items"].pop("next", None)
             self.cache.put(cache_key, data)
@@ -293,10 +302,10 @@ class SpotifyClient:
             data = cached
             track_items = data["items"]["items"]
 
-        tracks = self._enrich_with_artists(track_items, force_refresh=force_refresh)
+        tracks = self._enrich_with_artists(track_items, force_refresh=force_refresh, on_progress=on_progress)
         return Playlist.from_api(data, tracks)
 
-    def fetch_liked_songs(self, *, force_refresh: bool = False) -> Playlist:
+    def fetch_liked_songs(self, *, force_refresh: bool = False, on_progress: ProgressFn | None = None) -> Playlist:
         """Fetch the authenticated user's saved tracks as a pseudo-Playlist.
 
         Spotify's "Liked Songs" is not a real playlist — it has no id, no owner, no description.
@@ -307,6 +316,7 @@ class SpotifyClient:
 
         Args:
             force_refresh: Skip the cache and refetch from the API.
+            on_progress: Optional ``(phase, done, total)`` callback; see ``fetch_playlist``.
 
         Returns:
             A pseudo-Playlist with id ``"__liked__"`` and name ``"Liked Songs"``.
@@ -323,10 +333,14 @@ class SpotifyClient:
             raw_items: list[dict[str, Any]] = list(first["items"])
             dropped = sum(1 for it in first["items"] if it.get("track") is None)
             page: dict[str, Any] = first
+            if on_progress is not None:
+                on_progress("tracks", len(raw_items), None)
             while page.get("next"):
                 page = self._sp_next(page)
                 raw_items.extend(page["items"])
                 dropped += sum(1 for it in page["items"] if it.get("track") is None)
+                if on_progress is not None:
+                    on_progress("tracks", len(raw_items), None)
             items: list[dict[str, Any]] = [
                 {
                     "item": it["track"],
@@ -353,10 +367,10 @@ class SpotifyClient:
             data = cached
             items = data["items"]["items"]
 
-        tracks = self._enrich_with_artists(items, force_refresh=force_refresh)
+        tracks = self._enrich_with_artists(items, force_refresh=force_refresh, on_progress=on_progress)
         return Playlist.from_api(data, tracks)
 
-    def _enrich_with_artists(self, track_items: list[dict[str, Any]], *, force_refresh: bool = False) -> list[Track]:
+    def _enrich_with_artists(self, track_items: list[dict[str, Any]], *, force_refresh: bool = False, on_progress: ProgressFn | None = None) -> list[Track]:
         """Filter to audio tracks, resolve artist lookups, and return Track objects.
 
         One pipeline runs in two stages: filter to audio tracks → collect unique artist IDs → batch-fetch Spotify artists via ``fetch_artists()``. If ``genre_enricher`` is set,
@@ -366,6 +380,7 @@ class SpotifyClient:
         Args:
             track_items: Raw playlist-item dicts using the ``item`` key schema.
             force_refresh: Passed through to both ``fetch_artists()`` and ``LastFmClient.fetch_artist_tags()``.
+            on_progress: Optional ``(phase, done, total)`` callback; see ``fetch_playlist``.
 
         Returns:
             List of fully-enriched Track objects. Non-track items (podcast episodes, null slots) are dropped; local files pass through — they carry ``type: "track"`` and are flagged via ``Track.is_local``.
@@ -380,20 +395,23 @@ class SpotifyClient:
             for a in item["item"].get("artists", []):
                 if a.get("id"):
                     artist_ids.add(a["id"])
-        artist_by_id: dict[str, Artist] = {a.id: a for a in self.fetch_artists(artist_ids, force_refresh=force_refresh)}
+        artist_by_id: dict[str, Artist] = {a.id: a for a in self.fetch_artists(artist_ids, force_refresh=force_refresh, on_progress=on_progress)}
 
         if self.genre_enricher is not None:
             logger.info("Enriching %d artists with Last.fm tags", len(artist_by_id))
             enriched: dict[str, Artist] = {}
-            iter_artists: Iterable[Artist] = _tqdm_cls(artist_by_id.values(), desc="Enriching with Last.fm tags", unit="artist")  # pyright: ignore[reportUnknownVariableType]
-            for artist in iter_artists:
+            total = len(artist_by_id)
+            iter_artists: Iterable[Artist] = artist_by_id.values() if on_progress is not None else _tqdm_cls(artist_by_id.values(), desc="Enriching with Last.fm tags", unit="artist")  # pyright: ignore[reportUnknownVariableType]
+            for i, artist in enumerate(iter_artists, start=1):
                 tags = self.genre_enricher.fetch_artist_tags(artist.id, artist.name, force_refresh=force_refresh)
                 enriched[artist.id] = replace(artist, tags=tags)
+                if on_progress is not None:
+                    on_progress("lastfm_tags", i, total)
             artist_by_id = enriched
 
         return [Track.from_api(item, artist_by_id) for item in audio_tracks]
 
-    def fetch_artists(self, artist_ids: Iterable[str], *, force_refresh: bool = False) -> list[Artist]:
+    def fetch_artists(self, artist_ids: Iterable[str], *, force_refresh: bool = False, on_progress: ProgressFn | None = None) -> list[Artist]:
         """Fetch artists by ID, one call per artist.
 
         Spotify removed the batch ``GET /artists?ids=...`` endpoint in February 2026 (403 Forbidden for new apps). The only path now is single-artist ``GET /artists/{id}``. Each result is cached individually under ``artist/<id>``, so a refresh of the same playlist hits the cache instead of the API.
@@ -402,6 +420,7 @@ class SpotifyClient:
         Args:
             artist_ids: Iterable of Spotify artist IDs.
             force_refresh: Skip the cache and refetch from the API.
+            on_progress: Optional ``(phase, done, total)`` callback with phase ``"artists"``; replaces the tqdm bar when set.
 
         Returns:
             List of Artist objects with id and name; ``tags`` stays empty until Last.fm enrichment fills it in ``_enrich_with_artists``. Sorted by id (the deduplication order — not the input order).
@@ -411,8 +430,8 @@ class SpotifyClient:
             return []
         logger.info("Fetching %d unique artists", len(ids))
         out: list[Artist] = []
-        ids_iter: Iterable[str] = _tqdm_cls(ids, desc="Fetching artists", unit="artist")  # pyright: ignore[reportUnknownVariableType]
-        for artist_id in ids_iter:
+        ids_iter: Iterable[str] = ids if on_progress is not None else _tqdm_cls(ids, desc="Fetching artists", unit="artist")  # pyright: ignore[reportUnknownVariableType]
+        for i, artist_id in enumerate(ids_iter, start=1):
             cache_key = f"artist/{artist_id}"
             cached = None if force_refresh else self.cache.get(cache_key, ttl_days=self.ARTIST_CACHE_TTL_DAYS)
             data: dict[str, Any]
@@ -425,4 +444,6 @@ class SpotifyClient:
                 logger.debug("Cache hit for artist %s", artist_id)
                 data = cached
             out.append(Artist.from_api(data))
+            if on_progress is not None:
+                on_progress("artists", i, len(ids))
         return out

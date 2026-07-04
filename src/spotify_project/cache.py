@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -77,6 +78,27 @@ class FileCache:
         tmp_path = path.with_name(path.name + ".tmp")
         tmp_path.write_text(json.dumps(value), encoding="utf-8")
         os.replace(tmp_path, path)
+
+    def cached_at(self, key: str, *, ttl_days: float | None = None) -> datetime | None:
+        """Return when ``key`` was last written, or None if the entry is missing or stale.
+
+        Applies the same mtime-based TTL rule as ``get()`` but never reads or parses the payload, so it is cheap enough for listing endpoints that stamp many entries per request.
+
+        Args:
+            key: Cache key (e.g. ``"playlist/<id>"``).
+            ttl_days: Per-call TTL override. When ``None`` (default), uses the instance-level ``self.ttl_days``.
+
+        Returns:
+            The entry's last-write time as an aware UTC datetime, or ``None`` when missing or stale.
+        """
+        effective_ttl = ttl_days if ttl_days is not None else self.ttl_days
+        try:
+            mtime = self._path_for(key).stat().st_mtime
+        except OSError:
+            return None
+        if time.time() - mtime > effective_ttl * 86_400:
+            return None
+        return datetime.fromtimestamp(mtime, tz=UTC)
 
     def clear(self) -> None:
         """Remove every cached entry under ``root``.
